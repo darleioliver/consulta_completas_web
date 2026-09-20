@@ -1,29 +1,19 @@
-# Consulta Completas Web V3
+# Consulta Completas Web V4 — Visual e filtros
 
-V3 adiciona download seguro dos XLSX pelo site.
+Esta versão mantém o motor/agent V3 e altera somente o servidor web.
 
-## Railway
-Mantenha as variáveis já configuradas:
-- DATABASE_URL
-- ADMIN_USERNAME
-- ADMIN_PASSWORD
-- SECRET_KEY
-- AGENT_API_KEY
-- AWS_ENDPOINT_URL
-- AWS_S3_BUCKET_NAME
-- AWS_DEFAULT_REGION
-- AWS_ACCESS_KEY_ID
-- AWS_SECRET_ACCESS_KEY
+Novidades:
+- seleção múltipla pesquisável para Estado, Cidade, Sexo, CBO e Faixa de renda;
+- ao selecionar UF(s), o menu de cidades mostra somente cidades desses estados;
+- vários estados/cidades/CBOs podem ser selecionados;
+- Bairro, CEP e DDD continuam aceitando vários valores separados por vírgula;
+- botão Limpar filtros;
+- modo Atualizados 2026 desativa visualmente CBO/renda/idade e habilita CEP;
+- tela do pedido mais limpa para o cliente;
+- JSON técnico fica oculto para clientes e disponível apenas para ADMIN;
+- download pelo Bucket permanece igual à V3.
 
-O Bucket continua privado.
-
-## Fluxo
-1. Cliente cria pedido.
-2. Agente local processa.
-3. Servidor gera URL temporária de upload.
-4. Agente envia o XLSX diretamente ao Bucket.
-5. Pedido é concluído e recebe `arquivo_chave`.
-6. O dono do pedido vê `Baixar Excel`.
-7. Ao clicar, o servidor valida o usuário e gera URL temporária de download (15 min).
-
-As bases brutas permanecem no PC.
+IMPORTANTE:
+- não é necessário alterar o agente local;
+- continue usando o agente V3 atual;
+- mantenha as mesmas variáveis do Railway.

@@ -75,6 +75,19 @@ FAIXAS_RENDA_DESCRICAO = {
 }
 
 
+UF_NOMES = {
+    "AC": "Acre", "AL": "Alagoas", "AP": "Amapá", "AM": "Amazonas",
+    "BA": "Bahia", "CE": "Ceará", "DF": "Distrito Federal",
+    "ES": "Espírito Santo", "GO": "Goiás", "MA": "Maranhão",
+    "MT": "Mato Grosso", "MS": "Mato Grosso do Sul", "MG": "Minas Gerais",
+    "PA": "Pará", "PB": "Paraíba", "PR": "Paraná", "PE": "Pernambuco",
+    "PI": "Piauí", "RJ": "Rio de Janeiro", "RN": "Rio Grande do Norte",
+    "RS": "Rio Grande do Sul", "RO": "Rondônia", "RR": "Roraima",
+    "SC": "Santa Catarina", "SP": "São Paulo", "SE": "Sergipe",
+    "TO": "Tocantins",
+}
+
+
 def conectar():
     return psycopg.connect(
         DATABASE_URL,
@@ -292,6 +305,39 @@ BASE_STYLE = r"""
 :root{--bg:#f4f7fb;--card:#fff;--text:#172033;--muted:#697586;--line:#e5eaf1;--primary:#0f766e;--primary2:#14b8a6;--danger:#b42318;--green:#166534;--amber:#8a5a00;--soft:#e9f8f5;--shadow:0 10px 32px rgba(15,23,42,.06)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial;background:linear-gradient(180deg,#f8fafc,#f4f7fb);color:var(--text)}a{text-decoration:none;color:inherit}.wrap{max-width:1360px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px}.brand{display:flex;align-items:center;gap:12px}.logo{width:48px;height:48px;border-radius:15px;background:linear-gradient(135deg,var(--primary),#2dd4bf);color:#fff;display:grid;place-items:center;font-size:23px;box-shadow:0 10px 22px rgba(15,118,110,.18)}.brand h1{font-size:23px;margin:0}.brand p{font-size:12px;color:var(--muted);margin:4px 0 0}.nav{display:flex;gap:8px;flex-wrap:wrap}.btn,.btn2,.danger{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 14px;border-radius:11px;font-weight:800;cursor:pointer;font-size:13px}.btn{border:0;background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;box-shadow:0 8px 18px rgba(15,118,110,.18)}.btn2{background:#fff;border:1px solid var(--line);color:#344054}.danger{background:#fff1f0;border:1px solid #ffd5d1;color:var(--danger)}.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:19px;box-shadow:var(--shadow)}.w3{grid-column:span 3}.w4{grid-column:span 4}.w6{grid-column:span 6}.w12{grid-column:1/-1}.metric strong{display:block;font-size:29px;color:var(--primary);letter-spacing:-.02em}.metric span{display:block;color:var(--muted);font-size:11.5px;margin-top:5px}.section-title{font-size:15px;font-weight:850;margin:2px 0 15px}.fields{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:13px}.field{grid-column:span 4}.field.w6{grid-column:span 6}.field.w3{grid-column:span 3}.field.full{grid-column:1/-1}label{display:block;font-size:12px;font-weight:800;margin-bottom:7px;color:#374151}input,select,textarea{width:100%;border:1px solid #d8e0e9;border-radius:11px;padding:9px 11px;font:inherit;background:#fff;color:#1f2937;outline:none}input,select:not([multiple]){height:43px}select[multiple]{min-height:120px}textarea{min-height:78px;resize:vertical}.helper{font-size:10.5px;color:#8b96a6;margin-top:5px;line-height:1.4}.flash{padding:12px 14px;border-radius:12px;margin-bottom:14px;background:#ecfdf3;color:#166534;border:1px solid #d2f5de;font-size:13px}.flash.erro{background:#fff1f0;color:#b42318;border-color:#ffd5d1}.pill{display:inline-flex;padding:5px 8px;border-radius:999px;font-size:10px;font-weight:850}.pill.ATIVO,.pill.CONCLUIDO{background:#dcfce7;color:#166534}.pill.BLOQUEADO,.pill.ERRO{background:#fee2e2;color:#991b1b}.pill.AGUARDANDO{background:#fff4d5;color:#8a5a00}.pill.PROCESSANDO{background:#e7f0ff;color:#1d4ed8}.muted{color:var(--muted)}table{width:100%;border-collapse:collapse;min-width:720px}th,td{text-align:left;padding:11px 12px;border-bottom:1px solid #edf0f4;font-size:12.5px}th{font-size:10.5px;color:#667085;text-transform:uppercase;background:#fafbfc}.table-wrap{overflow:auto}.actions{display:flex;gap:7px;flex-wrap:wrap;align-items:center}.actions input{height:36px;width:125px}.actions button{min-height:36px}.switchrow{display:flex;align-items:center;gap:9px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#fbfcfd}.switchrow input{width:auto;height:auto}.notice{padding:12px 14px;border-radius:12px;background:#f0fdf9;border:1px solid #d1fae5;color:#0f5f58;font-size:12px}.progress{height:7px;border-radius:999px;background:#edf1f5;overflow:hidden;min-width:90px}.progress>span{display:block;height:100%;background:linear-gradient(90deg,var(--primary),var(--primary2))}.loginbody{min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 10% 0,rgba(20,184,166,.2),transparent 32%),linear-gradient(145deg,#08111f,#101b2d)}.login-card{width:min(430px,calc(100% - 28px));background:#fff;border-radius:24px;padding:32px;box-shadow:0 25px 80px rgba(0,0,0,.24)}.login-card input{margin-bottom:13px}.login-card .btn{width:100%}.login-card h1{font-size:27px;margin:0 0 7px}.login-card p{color:var(--muted);font-size:13px;margin:0 0 24px}
 @media(max-width:900px){.w3,.w4,.w6,.w12,.field,.field.w6,.field.w3{grid-column:1/-1}.wrap{padding:13px}.top{align-items:flex-start;flex-direction:column}.card{padding:15px}}
+
+/* V4 — seleção pesquisável */
+.filter-intro{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:17px;flex-wrap:wrap}
+.filter-intro .copy{max-width:760px}
+.filter-intro .copy p{margin:5px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.filter-badge{display:inline-flex;align-items:center;gap:6px;background:#eefbf8;color:#0f766e;border:1px solid #ccefe8;border-radius:999px;padding:7px 10px;font-size:11px;font-weight:800}
+.smartmulti{position:relative}
+.smartmulti-native{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;overflow:hidden!important}
+.smartmulti-control{min-height:45px;border:1px solid #d8e0e9;border-radius:12px;background:#fff;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 9px;cursor:text;transition:border-color .15s,box-shadow .15s,background .15s}
+.smartmulti-control:focus-within{border-color:#6ccfc4;box-shadow:0 0 0 3px rgba(20,184,166,.12)}
+.smartmulti.disabled .smartmulti-control{background:#f4f6f8;cursor:not-allowed;opacity:.72}
+.smartmulti-search{border:0!important;box-shadow:none!important;outline:0!important;padding:4px 2px!important;height:30px!important;min-width:115px;flex:1;background:transparent!important;font-size:13px}
+.smartmulti-chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;padding:5px 8px;border-radius:8px;background:#e9f8f5;color:#0f625b;font-size:11px;font-weight:750;border:1px solid #ccefe8}
+.smartmulti-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px}
+.smartmulti-chip button{border:0;background:transparent;color:#0f766e;font-size:15px;line-height:1;padding:0;cursor:pointer}
+.smartmulti-menu{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:40;background:#fff;border:1px solid #d8e0e9;border-radius:12px;box-shadow:0 16px 34px rgba(15,23,42,.14);max-height:280px;overflow:auto;padding:6px;display:none}
+.smartmulti.open .smartmulti-menu{display:block}
+.smartmulti-option{width:100%;border:0;background:#fff;border-radius:8px;padding:9px 10px;text-align:left;cursor:pointer;font:inherit;font-size:12px;color:#273142;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.smartmulti-option:hover,.smartmulti-option:focus{background:#f2faf8;outline:0}
+.smartmulti-option.selected{background:#e9f8f5;color:#0f625b;font-weight:800}
+.smartmulti-option small{color:#8a95a5}
+.smartmulti-empty{padding:14px;color:#8a95a5;font-size:12px;text-align:center}
+.smartmulti-hint{font-size:10px;color:#98a2b3;margin-top:5px}
+.compact-input{min-height:45px}
+.form-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:15px;flex-wrap:wrap}
+.btn-clean{border:0;background:transparent;color:#667085;font-weight:750;cursor:pointer;padding:9px 3px;font-size:12px}
+.btn-clean:hover{color:#344054}
+.mode-card{transition:.15s}
+.mode-card.on{border-color:#99e4da;background:#f1fcf9}
+.order-success{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.order-success strong{font-size:15px}
+.order-file{font-size:11px;color:var(--muted);margin-top:4px}
+@media(max-width:900px){.smartmulti-chip span{max-width:170px}.form-actions .btn{width:100%}}
 </style>
 """
 
@@ -307,41 +353,362 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 <div class='card w3 metric'><strong>{{recentes|length}}</strong><span>Pedidos recentes</span></div>
 
 <div class='card w12'>
-<div class='section-title'>🔎 Nova exportação</div>
+<div class='filter-intro'>
+  <div class='copy'><div class='section-title' style='margin-bottom:0'>🔎 Nova exportação</div><p>Pesquise e selecione um ou vários estados, cidades e CBOs. Bairro, CEP e DDD podem ser informados separados por vírgula.</p></div>
+  <div class='filter-badge'>✓ Filtros combináveis</div>
+</div>
 {% if not menu_pronto %}<div class='flash erro'>O agente do seu PC ainda não sincronizou os menus. Inicie o agente local primeiro.</div>{% endif %}
-<form method='post' action='{{url_for("criar_pedido")}}'>
+<form id='export-form' method='post' action='{{url_for("criar_pedido")}}'>
 <input type='hidden' name='csrf_token' value='{{csrf_token()}}'>
 <div class='fields'>
-<div class='field w3'><label>Estados (UF)</label><select name='ufs' multiple>{% for x in ufs %}<option value='{{x}}'>{{x}}</option>{% endfor %}</select><div class='helper'>Sem seleção = Brasil inteiro.</div></div>
-<div class='field w6'><label>Cidades</label><select name='cidades' multiple>{% for x in cidades %}<option value='{{x.cidade}}'>{{x.cidade}} — {{x.uf}}</option>{% endfor %}</select></div>
-<div class='field w3'><label>Sexo</label><select name='sexos' multiple>{% for x in sexos %}<option value='{{x}}'>{% if x=='F' %}F — Feminino{% elif x=='M' %}M — Masculino{% else %}I — Indefinido{% endif %}</option>{% endfor %}</select></div>
 
-<div class='field w6'><label>CBO</label><select id='cbos' name='cbos' multiple>{% for x in cbos %}<option value='{{x}}'>{{x}}</option>{% endfor %}</select></div>
-<div class='field w6'><label>Faixa de renda</label><select id='faixas' name='faixas_renda' multiple>{% for x in faixas %}<option value='{{x}}'>{{x}} — {{faixas_desc.get(x,'')}}</option>{% endfor %}</select></div>
-
-<div class='field w3'><label>CEP(s)</label><textarea id='ceps' name='ceps' placeholder='45000000, 45020000'></textarea><div class='helper'>Usado no modo Atualizados 2026.</div></div>
-<div class='field w3'><label>Bairro(s)</label><textarea name='bairros' placeholder='Centro, Candeias'></textarea></div>
-<div class='field w3'><label>DDD(s)</label><textarea name='ddds' placeholder='77, 73, 75'></textarea><div class='helper'>Obtido pelos 2 primeiros dígitos do telefone nacional.</div></div>
-<div class='field w3'><label>Quantidade</label><input type='number' name='quantidade' value='5000' min='1' max='1000000' required></div>
-
-<div class='field w6'><div class='switchrow'><input id='idade_check' type='checkbox' name='filtrar_idade' value='1'><label for='idade_check' style='margin:0'>Filtrar por idade</label><input id='idade_min' type='number' name='idade_min' value='{{idade_min}}' min='0' max='90' style='width:95px' disabled><span>até</span><input id='idade_max' type='number' name='idade_max' value='{{idade_max}}' min='0' max='90' style='width:95px' disabled></div></div>
-<div class='field w6'><div class='switchrow'><input id='atualizados' type='checkbox' name='atualizados_2026' value='1'><label for='atualizados' style='margin:0'>⚡ Atualizados 2026</label><span class='muted' style='font-size:11px'>Somente a base 2026.</span></div></div>
+<div class='field w4'>
+<label>Estados (UF)</label>
+<select id='ufs' class='smartmulti-native' name='ufs' multiple data-placeholder='Pesquisar estado...'>
+{% for x in ufs %}<option value='{{x}}'>{{x}} — {{uf_nomes.get(x,x)}}</option>{% endfor %}
+</select>
+<div class='helper'>Sem seleção = Brasil inteiro. Você pode selecionar vários estados.</div>
 </div>
+
+<div class='field w4'>
+<label>Cidades</label>
+<select id='cidades' class='smartmulti-native' name='cidades' multiple data-placeholder='Pesquisar cidade...'>
+{% for x in cidades %}<option value='{{x.cidade}}' data-uf='{{x.uf}}'>{{x.cidade}} — {{x.uf}}</option>{% endfor %}
+</select>
+<div id='cidade-helper' class='helper'>Selecione um estado para mostrar somente as cidades dele, ou pesquise no Brasil inteiro.</div>
+</div>
+
+<div class='field w4'>
+<label>Sexo</label>
+<select id='sexos' class='smartmulti-native' name='sexos' multiple data-placeholder='Selecionar sexo...'>
+{% for x in sexos %}<option value='{{x}}'>{% if x=='F' %}F — Feminino{% elif x=='M' %}M — Masculino{% else %}I — Indefinido{% endif %}</option>{% endfor %}
+</select>
+<div class='helper'>Sem seleção = todos.</div>
+</div>
+
+<div class='field w6'>
+<label>CBO</label>
+<select id='cbos' class='smartmulti-native' name='cbos' multiple data-placeholder='Digite o CBO para pesquisar...'>
+{% for x in cbos %}<option value='{{x}}'>{{x}}</option>{% endfor %}
+</select>
+<div class='helper'>Você pode selecionar vários CBOs.</div>
+</div>
+
+<div class='field w6'>
+<label>Faixa de renda</label>
+<select id='faixas' class='smartmulti-native' name='faixas_renda' multiple data-placeholder='Selecionar faixa de renda...'>
+{% for x in faixas %}<option value='{{x}}'>{{x}} — {{faixas_desc.get(x,'')}}</option>{% endfor %}
+</select>
+<div class='helper'>Sem seleção = todas as faixas.</div>
+</div>
+
+<div class='field w3'>
+<label>CEP(s)</label>
+<input class='compact-input' id='ceps' name='ceps' placeholder='45000000, 45020000'>
+<div class='helper'>Somente no modo Atualizados 2026.</div>
+</div>
+
+<div class='field w3'>
+<label>Bairro(s)</label>
+<input class='compact-input' id='bairros' name='bairros' placeholder='Centro, Candeias, Brasil'>
+<div class='helper'>Separe vários bairros por vírgula.</div>
+</div>
+
+<div class='field w3'>
+<label>DDD(s)</label>
+<input class='compact-input' id='ddds' name='ddds' placeholder='77, 73, 75'>
+<div class='helper'>Separe vários DDDs por vírgula.</div>
+</div>
+
+<div class='field w3'>
+<label>Quantidade</label>
+<input type='number' name='quantidade' value='5000' min='1' max='1000000' required>
+<div class='helper'>Quantidade final de contatos únicos.</div>
+</div>
+
+<div class='field w6'>
+<div class='switchrow mode-card' id='idade-card'>
+<input id='idade_check' type='checkbox' name='filtrar_idade' value='1'>
+<label for='idade_check' style='margin:0'>Filtrar por idade</label>
+<input id='idade_min' type='number' name='idade_min' value='{{idade_min}}' min='0' max='90' style='width:95px' disabled>
+<span>até</span>
+<input id='idade_max' type='number' name='idade_max' value='{{idade_max}}' min='0' max='90' style='width:95px' disabled>
+</div>
+</div>
+
+<div class='field w6'>
+<div class='switchrow mode-card' id='atualizados-card'>
+<input id='atualizados' type='checkbox' name='atualizados_2026' value='1'>
+<label for='atualizados' style='margin:0'>⚡ Atualizados 2026</label>
+<span class='muted' style='font-size:11px'>Somente a base 2026.</span>
+</div>
+</div>
+</div>
+
 <div class='notice' style='margin-top:14px'>A quantidade solicitada fica reservada enquanto o pedido estiver aguardando/processando. O saldo só é descontado quando a exportação termina com sucesso, usando a quantidade realmente entregue.</div>
-<div style='display:flex;justify-content:flex-end;margin-top:15px'><button class='btn' type='submit' {% if not menu_pronto %}disabled{% endif %}>📤 Criar pedido de exportação</button></div>
-</form></div>
+<div class='form-actions'>
+<button id='limpar-filtros' class='btn-clean' type='button'>Limpar filtros</button>
+<button class='btn' type='submit' {% if not menu_pronto %}disabled{% endif %}>📤 Criar pedido de exportação</button>
+</div>
+</form>
+</div>
 
 <div class='card w12'><div class='section-title'>📋 Últimos pedidos</div><div class='table-wrap'>{% if recentes %}<table><thead><tr><th>Pedido</th><th>Quantidade</th><th>Status</th><th>Progresso</th><th>Mensagem</th><th>Criado</th></tr></thead><tbody>{% for p in recentes %}<tr><td><a href='{{url_for("ver_pedido",pedido_id=p.id)}}'><b>#{{p.id}}</b></a></td><td>{{"{:,}".format(p.quantidade).replace(",", ".")}}</td><td><span class='pill {{p.status}}'>{{p.status}}</span></td><td><div class='progress'><span style='width:{{p.progresso}}%'></span></div><small>{{p.progresso}}%</small></td><td>{{p.mensagem or ''}}</td><td>{{p.criado_em}}</td></tr>{% endfor %}</tbody></table>{% else %}<p class='muted'>Nenhum pedido criado ainda.</p>{% endif %}</div></div>
 </div></div>
+
 <script>
-const atualizados=document.getElementById('atualizados');const cbos=document.getElementById('cbos');const faixas=document.getElementById('faixas');const idadeCheck=document.getElementById('idade_check');const idadeMin=document.getElementById('idade_min');const idadeMax=document.getElementById('idade_max');
-function sync(){const a=atualizados.checked;cbos.disabled=a;faixas.disabled=a;idadeCheck.disabled=a;if(a){idadeCheck.checked=false;}idadeMin.disabled=a||!idadeCheck.checked;idadeMax.disabled=a||!idadeCheck.checked;}
-atualizados.addEventListener('change',sync);idadeCheck.addEventListener('change',sync);sync();
+(function(){
+  class SmartMulti {
+    constructor(select, opts={}){
+      this.select=select;
+      this.opts=opts;
+      this.disabled=select.disabled;
+      this.root=document.createElement('div');
+      this.root.className='smartmulti';
+      this.control=document.createElement('div');
+      this.control.className='smartmulti-control';
+      this.control.setAttribute('role','combobox');
+      this.control.setAttribute('aria-expanded','false');
+      this.input=document.createElement('input');
+      this.input.type='text';
+      this.input.className='smartmulti-search';
+      this.input.autocomplete='off';
+      this.input.placeholder=select.dataset.placeholder || 'Pesquisar...';
+      this.menu=document.createElement('div');
+      this.menu.className='smartmulti-menu';
+      this.menu.setAttribute('role','listbox');
+      this.menu.setAttribute('aria-multiselectable','true');
+      this.control.appendChild(this.input);
+      this.root.appendChild(this.control);
+      this.root.appendChild(this.menu);
+      select.insertAdjacentElement('afterend',this.root);
+
+      this.input.addEventListener('focus',()=>this.open());
+      this.input.addEventListener('input',()=>this.renderMenu());
+      this.control.addEventListener('click',(e)=>{
+        if(!this.disabled && !e.target.closest('.smartmulti-chip button')) this.input.focus();
+      });
+      this.input.addEventListener('keydown',(e)=>{
+        if(e.key==='Escape') this.close();
+        if(e.key==='Backspace' && !this.input.value){
+          const selected=this.selectedOptions();
+          if(selected.length){selected[selected.length-1].selected=false;this.changed();}
+        }
+      });
+      this.setDisabled(this.disabled);
+      this.render();
+    }
+    allOptions(){ return Array.from(this.select.options); }
+    allowedOptions(){
+      const fn=this.opts.filter || (()=>true);
+      return this.allOptions().filter(fn);
+    }
+    selectedOptions(){ return this.allOptions().filter(o=>o.selected); }
+    open(){
+      if(this.disabled) return;
+      document.querySelectorAll('.smartmulti.open').forEach(x=>{if(x!==this.root)x.classList.remove('open')});
+      this.root.classList.add('open');
+      this.control.setAttribute('aria-expanded','true');
+      this.renderMenu();
+    }
+    close(){this.root.classList.remove('open');this.control.setAttribute('aria-expanded','false')}
+    render(){
+      Array.from(this.control.querySelectorAll('.smartmulti-chip')).forEach(x=>x.remove());
+      const selected=this.selectedOptions();
+      selected.forEach(opt=>{
+        const chip=document.createElement('span');
+        chip.className='smartmulti-chip';
+        const text=document.createElement('span');
+        text.textContent=opt.textContent.trim();
+        const remove=document.createElement('button');
+        remove.type='button';
+        remove.setAttribute('aria-label','Remover '+opt.textContent.trim());
+        remove.textContent='×';
+        remove.addEventListener('click',(e)=>{
+          e.stopPropagation();
+          if(this.disabled) return;
+          opt.selected=false;
+          this.changed();
+        });
+        chip.appendChild(text);chip.appendChild(remove);
+        this.control.insertBefore(chip,this.input);
+      });
+      this.input.placeholder=selected.length ? 'Adicionar...' : (this.select.dataset.placeholder || 'Pesquisar...');
+      this.renderMenu();
+    }
+    renderMenu(){
+      if(!this.root.classList.contains('open')) return;
+      const q=this.input.value.trim().toLocaleLowerCase('pt-BR');
+      let options=this.allowedOptions().filter(o=>o.textContent.toLocaleLowerCase('pt-BR').includes(q));
+      const total=options.length;
+      options=options.slice(0,100);
+      this.menu.innerHTML='';
+      if(!options.length){
+        const empty=document.createElement('div');
+        empty.className='smartmulti-empty';
+        empty.textContent='Nenhuma opção encontrada.';
+        this.menu.appendChild(empty);
+        return;
+      }
+      options.forEach(opt=>{
+        const b=document.createElement('button');
+        b.type='button';
+        b.className='smartmulti-option'+(opt.selected?' selected':'');
+        const left=document.createElement('span');
+        left.textContent=opt.textContent.trim();
+        const right=document.createElement('small');
+        right.textContent=opt.selected?'✓ Selecionado':'Selecionar';
+        b.appendChild(left);b.appendChild(right);
+        b.addEventListener('click',()=>{
+          opt.selected=!opt.selected;
+          this.input.value='';
+          this.changed();
+          this.input.focus();
+        });
+        this.menu.appendChild(b);
+      });
+      if(total>100){
+        const hint=document.createElement('div');
+        hint.className='smartmulti-empty';
+        hint.textContent='Mostrando 100 resultados. Digite mais letras para refinar.';
+        this.menu.appendChild(hint);
+      }
+    }
+    changed(){
+      this.select.dispatchEvent(new Event('change',{bubbles:true}));
+      this.render();
+    }
+    refresh(){
+      const allowed=new Set(this.allowedOptions());
+      this.selectedOptions().forEach(o=>{if(!allowed.has(o))o.selected=false});
+      this.render();
+    }
+    clear(){
+      this.allOptions().forEach(o=>o.selected=false);
+      this.input.value='';
+      this.changed();
+    }
+    setDisabled(v){
+      this.disabled=!!v;
+      this.select.disabled=this.disabled;
+      this.input.disabled=this.disabled;
+      this.root.classList.toggle('disabled',this.disabled);
+      if(this.disabled)this.close();
+    }
+  }
+
+  const ufSelect=document.getElementById('ufs');
+  const cidadeSelect=document.getElementById('cidades');
+  const sexoSelect=document.getElementById('sexos');
+  const cboSelect=document.getElementById('cbos');
+  const faixaSelect=document.getElementById('faixas');
+
+  let ufMulti;
+  let cidadeMulti;
+  const getUFs=()=>new Set(Array.from(ufSelect.selectedOptions).map(o=>o.value));
+
+  ufMulti=new SmartMulti(ufSelect);
+  cidadeMulti=new SmartMulti(cidadeSelect,{
+    filter:(opt)=>{
+      const ufs=getUFs();
+      return !ufs.size || ufs.has(opt.dataset.uf);
+    }
+  });
+  const sexoMulti=new SmartMulti(sexoSelect);
+  const cboMulti=new SmartMulti(cboSelect);
+  const faixaMulti=new SmartMulti(faixaSelect);
+
+  const cidadeHelper=document.getElementById('cidade-helper');
+  function atualizarCidades(){
+    const ufs=Array.from(getUFs());
+    cidadeMulti.refresh();
+    if(!ufs.length){
+      cidadeHelper.textContent='Nenhum estado selecionado: pesquise cidades do Brasil inteiro.';
+    }else if(ufs.length===1){
+      cidadeHelper.textContent='Mostrando somente cidades de '+ufs[0]+'. Você pode selecionar várias.';
+    }else{
+      cidadeHelper.textContent='Mostrando somente cidades dos estados selecionados: '+ufs.join(', ')+'.';
+    }
+  }
+  ufSelect.addEventListener('change',atualizarCidades);
+  atualizarCidades();
+
+  document.addEventListener('click',(e)=>{
+    document.querySelectorAll('.smartmulti.open').forEach(root=>{
+      if(!root.contains(e.target)){root.classList.remove('open');root.querySelector('.smartmulti-control')?.setAttribute('aria-expanded','false')}
+    });
+  });
+
+  const atualizados=document.getElementById('atualizados');
+  const idadeCheck=document.getElementById('idade_check');
+  const idadeMin=document.getElementById('idade_min');
+  const idadeMax=document.getElementById('idade_max');
+  const ceps=document.getElementById('ceps');
+  const idadeCard=document.getElementById('idade-card');
+  const atualizadosCard=document.getElementById('atualizados-card');
+
+  function syncModo(){
+    const a=atualizados.checked;
+    cboMulti.setDisabled(a);
+    faixaMulti.setDisabled(a);
+    idadeCheck.disabled=a;
+    if(a) idadeCheck.checked=false;
+    idadeMin.disabled=a||!idadeCheck.checked;
+    idadeMax.disabled=a||!idadeCheck.checked;
+    ceps.disabled=!a;
+    idadeCard.classList.toggle('on',idadeCheck.checked&&!a);
+    atualizadosCard.classList.toggle('on',a);
+  }
+  atualizados.addEventListener('change',syncModo);
+  idadeCheck.addEventListener('change',syncModo);
+  syncModo();
+
+  document.getElementById('limpar-filtros').addEventListener('click',()=>{
+    [ufMulti,cidadeMulti,sexoMulti,cboMulti,faixaMulti].forEach(x=>x.clear());
+    document.getElementById('ceps').value='';
+    document.getElementById('bairros').value='';
+    document.getElementById('ddds').value='';
+    idadeCheck.checked=false;
+    atualizados.checked=false;
+    document.querySelector('input[name="quantidade"]').value='5000';
+    atualizarCidades();
+    syncModo();
+  });
+})();
 </script></body></html>"""
+PEDIDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta http-equiv='refresh' content='5'><title>Pedido</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'><div class='top'><div class='brand'><div class='logo'>📦</div><div><h1>Pedido #{{p.id}}</h1><p>{% if p.status in ['AGUARDANDO','PROCESSANDO'] %}Atualização automática a cada 5 segundos.{% else %}Detalhes da exportação.{% endif %}</p></div></div><div class='nav'><a class='btn2' href='{{url_for("painel")}}'>← Voltar</a></div></div>
+<div class='grid'>
+<div class='card w3 metric'><strong>{{p.progresso}}%</strong><span>Progresso</span></div>
+<div class='card w3 metric'><strong>{{p.status}}</strong><span>Status</span></div>
+<div class='card w3 metric'><strong>{{"{:,}".format(p.quantidade).replace(",", ".")}}</strong><span>Solicitados</span></div>
+<div class='card w3 metric'><strong>{{"{:,}".format(entregues).replace(",", ".")}}</strong><span>Entregues</span></div>
 
-PEDIDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta http-equiv='refresh' content='5'><title>Pedido</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'><div class='top'><div class='brand'><div class='logo'>📦</div><div><h1>Pedido #{{p.id}}</h1><p>Atualização automática a cada 5 segundos.</p></div></div><div class='nav'><a class='btn2' href='{{url_for("painel")}}'>← Voltar</a></div></div>
-<div class='grid'><div class='card w3 metric'><strong>{{p.progresso}}%</strong><span>Progresso</span></div><div class='card w3 metric'><strong>{{p.status}}</strong><span>Status</span></div><div class='card w3 metric'><strong>{{p.quantidade}}</strong><span>Solicitados</span></div><div class='card w3 metric'><strong>{{entregues}}</strong><span>Entregues</span></div><div class='card w12'><h3>{{p.mensagem or 'Aguardando...'}}</h3><div class='progress' style='height:12px'><span style='width:{{p.progresso}}%'></span></div>{% if p.erro %}<div class='flash erro' style='margin-top:15px'>{{p.erro}}</div>{% endif %}{% if resultado %}<div class='notice' style='margin-top:15px'>Exportação concluída.{% if p.arquivo_chave %}<div style='margin-top:14px'><a class='btn' href='{{url_for("baixar_pedido", pedido_id=p.id)}}'>📥 Baixar Excel</a></div>{% else %}<div class='muted' style='margin-top:10px'>Arquivo ainda não disponível para download.</div>{% endif %}</div><pre style='white-space:pre-wrap;background:#f8fafc;padding:12px;border-radius:12px;border:1px solid #edf0f4'>{{resultado_pretty}}</pre>{% endif %}</div></div></div></body></html>"""
+<div class='card w12'>
+<h3 style='margin-top:0'>{{p.mensagem or 'Aguardando...'}}</h3>
+<div class='progress' style='height:12px'><span style='width:{{p.progresso}}%'></span></div>
 
+{% if p.erro %}
+<div class='flash erro' style='margin-top:15px'>Não foi possível concluir esta exportação. Tente novamente ou entre em contato com o suporte.</div>
+{% endif %}
+
+{% if p.status=='CONCLUIDO' %}
+<div class='notice order-success' style='margin-top:15px'>
+  <div>
+    <strong>✓ Exportação concluída com sucesso</strong>
+    <div class='order-file'>{{"{:,}".format(entregues).replace(",", ".")}} contatos entregues{% if resultado.arquivo_nome %} · {{resultado.arquivo_nome}}{% endif %}</div>
+  </div>
+  {% if p.arquivo_chave %}<a class='btn' href='{{url_for("baixar_pedido", pedido_id=p.id)}}'>📥 Baixar Excel</a>{% endif %}
+</div>
+{% endif %}
+
+{% if usuario.perfil=='ADMIN' and resultado %}
+<details style='margin-top:16px'>
+<summary class='muted' style='cursor:pointer;font-size:12px;font-weight:800'>Detalhes técnicos</summary>
+<pre style='white-space:pre-wrap;background:#f8fafc;padding:12px;border-radius:12px;border:1px solid #edf0f4;font-size:11px'>{{resultado_pretty}}</pre>
+</details>
+{% endif %}
+</div>
+</div></div></body></html>"""
 ADMIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Administração</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'><div class='top'><div class='brand'><div class='logo'>⚙️</div><div><h1>Administração</h1><p>Usuários, saldos e acessos.</p></div></div><div class='nav'><a class='btn2' href='{{url_for("painel")}}'>← Painel</a><a class='btn2' href='{{url_for("logout")}}'>Sair</a></div></div>
 {% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}
 <div class='grid'><div class='card w4'><h3>Criar usuário</h3><form method='post' action='{{url_for("admin_criar_usuario")}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><label>Usuário</label><input name='usuario' required><label style='margin-top:11px'>Senha</label><input type='password' name='senha' required><label style='margin-top:11px'>Saldo inicial</label><input type='number' name='saldo' value='0' min='0' required><button class='btn' type='submit' style='width:100%;margin-top:13px'>Criar usuário</button></form></div><div class='card w4 metric'><strong>{{total_clientes}}</strong><span>Clientes</span></div><div class='card w4 metric'><strong>{{"{:,}".format(total_saldo).replace(",", ".")}}</strong><span>Saldo total dos clientes</span></div>
@@ -403,6 +770,7 @@ def painel():
         recentes=recentes,
         menu_pronto=menu_pronto,
         ufs=opcoes("uf"),
+        uf_nomes=UF_NOMES,
         cidades=cidades_menu(),
         sexos=opcoes("sexo"),
         cbos=opcoes("cbo"),
@@ -436,6 +804,7 @@ def ver_pedido(pedido_id):
     return render_template_string(
         PEDIDO_HTML,
         p=p,
+        usuario=u,
         resultado=resultado,
         entregues=entregues,
         resultado_pretty=json.dumps(resultado, ensure_ascii=False, indent=2, default=str),
