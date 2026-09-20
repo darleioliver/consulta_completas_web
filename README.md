@@ -1,23 +1,20 @@
-# Consulta Completas Web
+# Consulta Completas Web — V2
 
-Primeira versão online do sistema.
+Versão com usuários, saldo, filtros online e API do agente local.
 
-## Variáveis necessárias no Railway
+## Variáveis do Railway
 
-- `DATABASE_URL` -> referência ao Postgres do projeto
-- `ADMIN_USERNAME` -> ex.: `admin`
-- `ADMIN_PASSWORD` -> escolha uma senha forte
-- `SECRET_KEY` -> chave aleatória longa
+- `DATABASE_URL` — referência ao Postgres do projeto
+- `ADMIN_USERNAME` — usuário administrador
+- `ADMIN_PASSWORD` — senha do administrador
+- `SECRET_KEY` — chave longa e aleatória da sessão
+- `AGENT_API_KEY` — chave longa e aleatória compartilhada somente com o agente do PC
 
-## O que esta primeira versão faz
+## Fluxo
 
-- cria automaticamente as tabelas do PostgreSQL
-- cria/atualiza a conta ADMIN
-- login individual
-- painel administrativo
-- criar clientes
-- adicionar/remover saldo
-- bloquear/desbloquear cliente
-- alterar senha do cliente
-
-A próxima etapa será conectar os filtros e o agente que roda no PC.
+1. Cliente entra no site e cria um pedido.
+2. O pedido fica `AGUARDANDO` e reserva a quantidade do saldo.
+3. O agente do PC busca o pedido e muda para `PROCESSANDO`.
+4. A exportação roda nas bases locais.
+5. Quando termina, o servidor desconta somente a quantidade realmente entregue.
+6. Nesta V2 o Excel continua no PC. O Bucket/download online entra na próxima etapa.
