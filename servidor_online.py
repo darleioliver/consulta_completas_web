@@ -5,6 +5,7 @@ import time
 from functools import wraps
 
 import psycopg
+import boto3
 from flask import Flask, jsonify, redirect, render_template_string, request, session, url_for, flash
 from psycopg.rows import dict_row
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -15,6 +16,32 @@ SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin").strip()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
 AGENT_API_KEY = os.getenv("AGENT_API_KEY", "").strip()
+
+AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL", "").strip()
+AWS_S3_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME", "").strip()
+AWS_DEFAULT_REGION = os.getenv("AWS_DEFAULT_REGION", "auto").strip() or "auto"
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
+
+def bucket_configurado():
+    return all([
+        AWS_ENDPOINT_URL,
+        AWS_S3_BUCKET_NAME,
+        AWS_ACCESS_KEY_ID,
+        AWS_SECRET_ACCESS_KEY,
+    ])
+
+def cliente_s3():
+    if not bucket_configurado():
+        raise RuntimeError("Bucket não configurado.")
+    return boto3.client(
+        "s3",
+        endpoint_url=AWS_ENDPOINT_URL,
+        region_name=AWS_DEFAULT_REGION,
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    )
+
 
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL não configurada no Railway.")
@@ -312,7 +339,7 @@ atualizados.addEventListener('change',sync);idadeCheck.addEventListener('change'
 </script></body></html>"""
 
 PEDIDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta http-equiv='refresh' content='5'><title>Pedido</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'><div class='top'><div class='brand'><div class='logo'>📦</div><div><h1>Pedido #{{p.id}}</h1><p>Atualização automática a cada 5 segundos.</p></div></div><div class='nav'><a class='btn2' href='{{url_for("painel")}}'>← Voltar</a></div></div>
-<div class='grid'><div class='card w3 metric'><strong>{{p.progresso}}%</strong><span>Progresso</span></div><div class='card w3 metric'><strong>{{p.status}}</strong><span>Status</span></div><div class='card w3 metric'><strong>{{p.quantidade}}</strong><span>Solicitados</span></div><div class='card w3 metric'><strong>{{entregues}}</strong><span>Entregues</span></div><div class='card w12'><h3>{{p.mensagem or 'Aguardando...'}}</h3><div class='progress' style='height:12px'><span style='width:{{p.progresso}}%'></span></div>{% if p.erro %}<div class='flash erro' style='margin-top:15px'>{{p.erro}}</div>{% endif %}{% if resultado %}<div class='notice' style='margin-top:15px'>Exportação concluída. O download online será conectado na próxima etapa.</div><pre style='white-space:pre-wrap;background:#f8fafc;padding:12px;border-radius:12px;border:1px solid #edf0f4'>{{resultado_pretty}}</pre>{% endif %}</div></div></div></body></html>"""
+<div class='grid'><div class='card w3 metric'><strong>{{p.progresso}}%</strong><span>Progresso</span></div><div class='card w3 metric'><strong>{{p.status}}</strong><span>Status</span></div><div class='card w3 metric'><strong>{{p.quantidade}}</strong><span>Solicitados</span></div><div class='card w3 metric'><strong>{{entregues}}</strong><span>Entregues</span></div><div class='card w12'><h3>{{p.mensagem or 'Aguardando...'}}</h3><div class='progress' style='height:12px'><span style='width:{{p.progresso}}%'></span></div>{% if p.erro %}<div class='flash erro' style='margin-top:15px'>{{p.erro}}</div>{% endif %}{% if resultado %}<div class='notice' style='margin-top:15px'>Exportação concluída.{% if p.arquivo_chave %}<div style='margin-top:14px'><a class='btn' href='{{url_for("baixar_pedido", pedido_id=p.id)}}'>📥 Baixar Excel</a></div>{% else %}<div class='muted' style='margin-top:10px'>Arquivo ainda não disponível para download.</div>{% endif %}</div><pre style='white-space:pre-wrap;background:#f8fafc;padding:12px;border-radius:12px;border:1px solid #edf0f4'>{{resultado_pretty}}</pre>{% endif %}</div></div></div></body></html>"""
 
 ADMIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Administração</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'><div class='top'><div class='brand'><div class='logo'>⚙️</div><div><h1>Administração</h1><p>Usuários, saldos e acessos.</p></div></div><div class='nav'><a class='btn2' href='{{url_for("painel")}}'>← Painel</a><a class='btn2' href='{{url_for("logout")}}'>Sair</a></div></div>
 {% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}
@@ -322,7 +349,7 @@ ADMIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><m
 
 @app.route("/health")
 def health():
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "bucket": bucket_configurado()})
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -412,6 +439,48 @@ def ver_pedido(pedido_id):
         entregues=entregues,
         resultado_pretty=json.dumps(resultado, ensure_ascii=False, indent=2, default=str),
     )
+
+
+@app.route("/pedido/<int:pedido_id>/baixar")
+@login_required
+def baixar_pedido(pedido_id):
+    u = usuario_atual()
+
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            if u["perfil"] == "ADMIN":
+                cur.execute(
+                    "SELECT id, usuario_id, status, arquivo_chave FROM pedidos WHERE id=%s",
+                    (pedido_id,),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, usuario_id, status, arquivo_chave FROM pedidos WHERE id=%s AND usuario_id=%s",
+                    (pedido_id, u["id"]),
+                )
+            p = cur.fetchone()
+
+    if not p:
+        return "Pedido não encontrado.", 404
+
+    if p["status"] != "CONCLUIDO" or not p["arquivo_chave"]:
+        return "Arquivo ainda não está disponível.", 409
+
+    try:
+        url = cliente_s3().generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": AWS_S3_BUCKET_NAME,
+                "Key": p["arquivo_chave"],
+            },
+            ExpiresIn=900,
+        )
+    except Exception:
+        app.logger.exception("Falha ao gerar link de download do pedido %s", pedido_id)
+        return "Não foi possível preparar o download agora.", 503
+
+    return redirect(url)
+
 
 
 @app.route("/criar", methods=["POST"])
@@ -634,6 +703,68 @@ def proximo_pedido():
     if isinstance(filtros, str):
         filtros = json.loads(filtros)
     return jsonify({"pedido": {"id": p["id"], "usuario": p["usuario"], "quantidade": p["quantidade"], "filtros": filtros}})
+
+
+
+@app.route("/api/pedidos/<int:pedido_id>/preparar-upload", methods=["POST"])
+@api_required
+def preparar_upload(pedido_id):
+    if not bucket_configurado():
+        return jsonify({"erro": "bucket_nao_configurado"}), 503
+
+    dados = request.get_json(force=True) or {}
+    nome_original = str(dados.get("nome_arquivo", "")).strip()
+
+    if not nome_original:
+        return jsonify({"erro": "nome_arquivo_obrigatorio"}), 400
+
+    # Nunca confia em caminhos enviados pelo agente.
+    nome_seguro = re.sub(r"[^A-Za-z0-9._-]+", "_", os.path.basename(nome_original))
+    if not nome_seguro.lower().endswith(".xlsx"):
+        return jsonify({"erro": "somente_xlsx"}), 400
+
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT p.id, p.usuario_id, p.status, u.usuario
+                FROM pedidos p
+                JOIN usuarios u ON u.id=p.usuario_id
+                WHERE p.id=%s
+                """,
+                (pedido_id,),
+            )
+            p = cur.fetchone()
+
+    if not p:
+        return jsonify({"erro": "pedido_nao_encontrado"}), 404
+
+    if p["status"] != "PROCESSANDO":
+        return jsonify({"erro": "status_invalido"}), 409
+
+    chave = f"exportacoes/usuario_{p['usuario_id']}/pedido_{pedido_id}/{nome_seguro}"
+
+    try:
+        url = cliente_s3().generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": AWS_S3_BUCKET_NAME,
+                "Key": chave,
+                "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            },
+            ExpiresIn=900,
+        )
+    except Exception:
+        app.logger.exception("Falha ao gerar URL de upload para pedido %s", pedido_id)
+        return jsonify({"erro": "falha_preparar_upload"}), 503
+
+    return jsonify({
+        "ok": True,
+        "upload_url": url,
+        "arquivo_chave": chave,
+        "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "expira_em_segundos": 900,
+    })
 
 
 @app.route("/api/pedidos/<int:pedido_id>/progresso", methods=["POST"])

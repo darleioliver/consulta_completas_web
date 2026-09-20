@@ -1,20 +1,29 @@
-# Consulta Completas Web — V2
+# Consulta Completas Web V3
 
-Versão com usuários, saldo, filtros online e API do agente local.
+V3 adiciona download seguro dos XLSX pelo site.
 
-## Variáveis do Railway
+## Railway
+Mantenha as variáveis já configuradas:
+- DATABASE_URL
+- ADMIN_USERNAME
+- ADMIN_PASSWORD
+- SECRET_KEY
+- AGENT_API_KEY
+- AWS_ENDPOINT_URL
+- AWS_S3_BUCKET_NAME
+- AWS_DEFAULT_REGION
+- AWS_ACCESS_KEY_ID
+- AWS_SECRET_ACCESS_KEY
 
-- `DATABASE_URL` — referência ao Postgres do projeto
-- `ADMIN_USERNAME` — usuário administrador
-- `ADMIN_PASSWORD` — senha do administrador
-- `SECRET_KEY` — chave longa e aleatória da sessão
-- `AGENT_API_KEY` — chave longa e aleatória compartilhada somente com o agente do PC
+O Bucket continua privado.
 
 ## Fluxo
+1. Cliente cria pedido.
+2. Agente local processa.
+3. Servidor gera URL temporária de upload.
+4. Agente envia o XLSX diretamente ao Bucket.
+5. Pedido é concluído e recebe `arquivo_chave`.
+6. O dono do pedido vê `Baixar Excel`.
+7. Ao clicar, o servidor valida o usuário e gera URL temporária de download (15 min).
 
-1. Cliente entra no site e cria um pedido.
-2. O pedido fica `AGUARDANDO` e reserva a quantidade do saldo.
-3. O agente do PC busca o pedido e muda para `PROCESSANDO`.
-4. A exportação roda nas bases locais.
-5. Quando termina, o servidor desconta somente a quantidade realmente entregue.
-6. Nesta V2 o Excel continua no PC. O Bucket/download online entra na próxima etapa.
+As bases brutas permanecem no PC.
