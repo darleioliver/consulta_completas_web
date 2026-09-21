@@ -384,7 +384,7 @@ BASE_STYLE = r"""
 
 .precount-warning{
   margin-top:12px;
-  border:2px solid #f6c453;
+  border:2px solid #baebb2;
   background:#fff9e8;
   color:#725100;
   border-radius:12px;
