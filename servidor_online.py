@@ -559,7 +559,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
   </div>
 
   <div id='advanced-panel' class='advanced-panel'>
-    <div class='advanced-warning'>⚠️ Aplicar CBO, renda ou idade pode reduzir significativamente a quantidade de números ativos disponíveis na exportação.</div>
+    <div class='advanced-warning'>⚠️ Aplicar CBO, renda ou idade pode reduzir significativamente a quantidade de números ativos no Whatsapp.</div>
 
     <div class='fields'>
       <div class='field w6'>
