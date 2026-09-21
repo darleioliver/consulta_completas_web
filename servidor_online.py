@@ -818,6 +818,12 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
         countValue.textContent=formatarNumero(data.quantidade);
         countState.textContent='Atualizado';
         countState.className='count-state';
+
+        countPanel.scrollIntoView({
+          behavior:'smooth',
+          block:'center'
+        });
+
         return;
       }
       if(data.status==='ERRO'){
@@ -868,6 +874,11 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
         countValue.textContent=formatarNumero(data.quantidade);
         countState.textContent=data.cache?'Resultado recente':'Atualizado';
         countState.className='count-state';
+
+        countPanel.scrollIntoView({
+          behavior:'smooth',
+          block:'center'
+        });
       }else{
         consultarStatus(data.id,seq);
       }
