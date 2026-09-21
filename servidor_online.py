@@ -384,16 +384,19 @@ BASE_STYLE = r"""
 
 .precount-warning{
   margin-top:12px;
-  border:2px solid #baebb2;
-  background:#fff9e8;
-  color:#725100;
+  border:1px solid #e6b84a;
+  background:#fff8e1;
+  color:#6b5500;
   border-radius:12px;
   padding:12px 14px;
   font-size:12px;
-  font-weight:800;
-  line-height:1.5
+  font-weight:700;
+  line-height:1.5;
 }
-.precount-warning strong{color:#8a5d00}
+
+.precount-warning strong{
+  color:#8a6500;
+}
 .btn-calc{
   display:inline-flex;align-items:center;justify-content:center;gap:7px;
   border:0;background:#2563eb;color:#fff;border-radius:11px;
@@ -593,7 +596,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 
 </div>
 
-<div class='precount-warning'><strong>⚠️ Importante:</strong> Bairro, DDD e CEP são aplicados somente durante a exportação e <u>não entram na pré-contagem</u>. A quantidade calculada pode, portanto, ser maior que a quantidade realmente disponível após esses três filtros.</div>
+<div class='precount-warning'><strong></strong> ⚠️Bairro, DDD e CEP são aplicados somente durante a exportação e <u>não entram na pré-contagem</u>. A quantidade calculada pode, portanto, ser maior que a quantidade realmente disponível após um desses três filtros.</div>
 <div class='notice' style='margin-top:12px'>A quantidade solicitada fica reservada enquanto o pedido estiver aguardando/processando. O saldo só é descontado quando a exportação termina com sucesso, usando a quantidade realmente entregue.</div>
 <div class='calc-row'>
   <div class='calc-actions'>
