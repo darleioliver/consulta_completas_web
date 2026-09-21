@@ -19,6 +19,17 @@ ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin").strip()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
 AGENT_API_KEY = os.getenv("AGENT_API_KEY", "").strip()
 
+# WhatsApp para recarga de saldo.
+# Você pode configurar apenas WHATSAPP_NUMBER (somente números, ex.: 5577999999999)
+# ou informar a URL completa em WHATSAPP_SALDO_URL.
+WHATSAPP_NUMBER = re.sub(r"\D", "", os.getenv("WHATSAPP_NUMBER", ""))
+WHATSAPP_SALDO_URL = os.getenv("WHATSAPP_SALDO_URL", "").strip()
+if not WHATSAPP_SALDO_URL and WHATSAPP_NUMBER:
+    WHATSAPP_SALDO_URL = (
+        f"https://wa.me/{WHATSAPP_NUMBER}"
+        "?text=Ol%C3%A1%2C%20quero%20adicionar%20saldo%20na%20minha%20conta%20Contatos%20Zap."
+    )
+
 AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL", "").strip()
 AWS_S3_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME", "").strip()
 AWS_DEFAULT_REGION = os.getenv("AWS_DEFAULT_REGION", "auto").strip() or "auto"
@@ -401,13 +412,52 @@ BASE_STYLE = r"""
 .calc-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px}
 .calc-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
 .filename-help{font-size:10px;color:#98a2b3;margin-top:5px}
+
+.btn-saldo{
+  display:inline-flex;align-items:center;justify-content:center;min-height:42px;
+  padding:0 14px;border-radius:11px;font-size:13px;font-weight:850;
+  background:#16a34a;color:#fff;border:0;text-decoration:none;
+  box-shadow:0 8px 18px rgba(22,163,74,.16)
+}
+.btn-saldo:hover{background:#15803d}
+.advanced-wrap{
+  grid-column:1/-1;border:1px solid #dbe4ec;border-radius:14px;
+  background:#fbfcfd;padding:12px
+}
+.advanced-head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap
+}
+.btn-advanced{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  min-height:40px;padding:0 13px;border:1px solid #cbd5e1;border-radius:10px;
+  background:#fff;color:#334155;font-size:12px;font-weight:850;cursor:pointer
+}
+.btn-advanced:hover{background:#f8fafc;border-color:#94a3b8}
+.btn-advanced:disabled{opacity:.5;cursor:not-allowed}
+.advanced-summary{font-size:11px;color:#64748b}
+.advanced-panel{display:none;margin-top:12px}
+.advanced-panel.show{display:block}
+.advanced-warning{
+  margin-bottom:12px;border:1px solid #f4c971;background:#fff8e8;color:#7c5600;
+  border-radius:11px;padding:11px 12px;font-size:11px;font-weight:800;line-height:1.45
+}
+.mode-warning{
+  display:none;margin-top:9px;border:1px solid #f4c971;background:#fff8e8;color:#7c5600;
+  border-radius:11px;padding:10px 12px;font-size:11px;font-weight:800;line-height:1.45
+}
+.mode-warning.show{display:block}
+.brand-link{font-size:10.5px;color:#0f766e;font-weight:800;margin-top:2px}
+@media(max-width:900px){
+  .btn-saldo{width:100%}
+  .smartmulti-menu{max-height:190px}
+}
 </style>
 """
 
-LOGIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Consulta de Contatos</title>""" + BASE_STYLE + """</head><body class='loginbody'><div class='login-card'><div class='logo' style='margin-bottom:20px'>📊</div><h1>Consulta de Contatos</h1><p>Entre com seu usuário e senha.</p>{% if erro %}<div class='flash erro'>{{erro}}</div>{% endif %}<form method='post'><label>Usuário</label><input name='usuario' autocomplete='username' autofocus required><label>Senha</label><input type='password' name='senha' autocomplete='current-password' required><button class='btn' type='submit'>Entrar</button></form></div></body></html>"""
+LOGIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Consultas Contatos Zap</title>""" + BASE_STYLE + """</head><body class='loginbody'><div class='login-card'><div class='logo' style='margin-bottom:20px'>📊</div><h1>Consultas Contatos Zap</h1><p>Acesse sua conta Contatos Zap para consultar e exportar contatos.</p>{% if erro %}<div class='flash erro'>{{erro}}</div>{% endif %}<form method='post'><label>Usuário</label><input name='usuario' autocomplete='username' autofocus required><label>Senha</label><input type='password' name='senha' autocomplete='current-password' required><button class='btn' type='submit'>Entrar</button></form></div></body></html>"""
 
-PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Consulta de Contatos</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'>
-<div class='top'><div class='brand'><div class='logo'>📊</div><div><h1>Consulta de Contatos</h1><p>Olá, {{usuario.usuario}}.</p></div></div><div class='nav'>{% if usuario.perfil=='ADMIN' %}<a class='btn2' href='{{url_for("admin")}}'>⚙️ Administração</a>{% endif %}<a class='btn2' href='{{url_for("logout")}}'>Sair</a></div></div>
+PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Consultas Contatos Zap</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'>
+<div class='top'><div class='brand'><div class='logo'>📊</div><div><h1>Consultas Contatos Zap</h1><p>Olá, {{usuario.usuario}}.</p><div class='brand-link'>contatoszap.com</div></div></div><div class='nav'>{% if whatsapp_saldo_url %}<a class='btn-saldo' href='{{whatsapp_saldo_url}}' target='_blank' rel='noopener'>💳 Adicionar saldo</a>{% endif %}{% if usuario.perfil=='ADMIN' %}<a class='btn2' href='{{url_for("admin")}}'>⚙️ Administração</a>{% endif %}<a class='btn2' href='{{url_for("logout")}}'>Sair</a></div></div>
 {% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}
 <div class='grid'>
 <div class='card w3 metric'><strong>{{"{:,}".format(usuario.saldo).replace(",", ".")}}</strong><span>Saldo total</span></div>
@@ -459,60 +509,35 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 <div class='helper'>Sem seleção = todos.</div>
 </div>
 
-<div class='field w6'>
-<label>CBO</label>
-<select id='cbos' class='smartmulti-native' name='cbos' multiple data-placeholder='Digite o CBO para pesquisar...'>
-{% for x in cbos %}<option value='{{x}}'>{{x}}</option>{% endfor %}
-</select>
-<div class='helper'>Você pode selecionar vários CBOs.</div>
-</div>
-
-<div class='field w6'>
-<label>Faixa de renda</label>
-<select id='faixas' class='smartmulti-native' name='faixas_renda' multiple data-placeholder='Selecionar faixa de renda...'>
-{% for x in faixas %}<option value='{{x}}'>{{x}} — {{faixas_desc.get(x,'')}}</option>{% endfor %}
-</select>
-<div class='helper'>Sem seleção = todas as faixas.</div>
-</div>
 
 <div class='field w3'>
 <label>CEP(s)</label>
-<input class='compact-input' id='ceps' name='ceps' placeholder='45000000, 45020000'>
+<input class='compact-input' id='ceps' name='ceps' enterkeyhint='next' placeholder='45000000, 45020000'>
 <div class='helper'>Aplicado na exportação tanto na base Atualizados 2026 quanto na base detalhada.</div>
 </div>
 
 <div class='field w3'>
 <label>Bairro(s)</label>
-<input class='compact-input' id='bairros' name='bairros' placeholder='Centro, Candeias, Brasil'>
+<input class='compact-input' id='bairros' name='bairros' enterkeyhint='next' placeholder='Centro, Candeias, Brasil'>
 <div class='helper'>Separe vários bairros por vírgula.</div>
 </div>
 
 <div class='field w3'>
 <label>DDD(s)</label>
-<input class='compact-input' id='ddds' name='ddds' placeholder='77, 73, 75'>
+<input class='compact-input' id='ddds' name='ddds' enterkeyhint='next' placeholder='77, 73, 75'>
 <div class='helper'>Separe vários DDDs por vírgula.</div>
 </div>
 
 <div class='field w3'>
 <label>Nome do arquivo</label>
-<input class='compact-input' id='nome_arquivo' name='nome_arquivo' maxlength='80' placeholder='Ex.: CLIENTES_BAHIA'>
+<input class='compact-input' id='nome_arquivo' name='nome_arquivo' maxlength='80' enterkeyhint='next' placeholder='Ex.: CLIENTES_BAHIA'>
 <div class='filename-help'>Opcional. Data e hora serão acrescentadas automaticamente para evitar nomes repetidos.</div>
 </div>
 
 <div class='field w3'>
 <label>Quantidade</label>
-<input type='number' name='quantidade' value='5000' min='1' max='1000000' required>
+<input type='number' name='quantidade' value='5000' min='1' max='1000000' enterkeyhint='done' required>
 <div class='helper'>Quantidade final de contatos únicos.</div>
-</div>
-
-<div class='field w6'>
-<div class='switchrow mode-card' id='idade-card'>
-<input id='idade_check' type='checkbox' name='filtrar_idade' value='1'>
-<label for='idade_check' style='margin:0'>Filtrar por idade</label>
-<input id='idade_min' type='number' name='idade_min' value='{{idade_min}}' min='0' max='90' style='width:95px' disabled>
-<span>até</span>
-<input id='idade_max' type='number' name='idade_max' value='{{idade_max}}' min='0' max='90' style='width:95px' disabled>
-</div>
 </div>
 
 <div class='field w6'>
@@ -521,7 +546,51 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 <label for='atualizados' style='margin:0'>⚡ Atualizados 2026</label>
 <span class='muted' style='font-size:11px'>Somente a base 2026.</span>
 </div>
+<div id='atualizados-warning' class='mode-warning'>⚠️ Ao ativar <strong>Atualizados 2026</strong>, os filtros avançados de CBO, renda e idade serão removidos desta consulta.</div>
 </div>
+
+<div class='advanced-wrap'>
+  <div class='advanced-head'>
+    <div>
+      <strong style='font-size:12px'>Filtros avançados</strong>
+      <div class='advanced-summary'>CBO, faixa de renda e idade ficam ocultos até você liberar.</div>
+    </div>
+    <button id='toggle-avancados' class='btn-advanced' type='button'>⚙️ Exibir filtros avançados</button>
+  </div>
+
+  <div id='advanced-panel' class='advanced-panel'>
+    <div class='advanced-warning'>⚠️ Aplicar CBO, renda ou idade pode reduzir significativamente a quantidade de números ativos disponíveis na exportação.</div>
+
+    <div class='fields'>
+      <div class='field w6'>
+        <label>CBO</label>
+        <select id='cbos' class='smartmulti-native' name='cbos' multiple data-placeholder='Digite o CBO para pesquisar...'>
+        {% for x in cbos %}<option value='{{x}}'>{{x}}</option>{% endfor %}
+        </select>
+        <div class='helper'>Você pode selecionar vários CBOs.</div>
+      </div>
+
+      <div class='field w6'>
+        <label>Faixa de renda</label>
+        <select id='faixas' class='smartmulti-native' name='faixas_renda' multiple data-placeholder='Selecionar faixa de renda...'>
+        {% for x in faixas %}<option value='{{x}}'>{{x}} — {{faixas_desc.get(x,'')}}</option>{% endfor %}
+        </select>
+        <div class='helper'>Sem seleção = todas as faixas.</div>
+      </div>
+
+      <div class='field w6'>
+        <div class='switchrow mode-card' id='idade-card'>
+          <input id='idade_check' type='checkbox' name='filtrar_idade' value='1'>
+          <label for='idade_check' style='margin:0'>Filtrar por idade</label>
+          <input id='idade_min' type='number' name='idade_min' value='{{idade_min}}' min='0' max='90' style='width:95px' enterkeyhint='next' disabled>
+          <span>até</span>
+          <input id='idade_max' type='number' name='idade_max' value='{{idade_max}}' min='0' max='90' style='width:95px' enterkeyhint='done' disabled>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 </div>
 
 <div class='precount-warning'><strong>⚠️ Importante:</strong> Bairro, DDD e CEP são aplicados somente durante a exportação e <u>não entram na pré-contagem</u>. A quantidade calculada pode, portanto, ser maior que a quantidade realmente disponível após esses três filtros.</div>
@@ -557,6 +626,8 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
       this.input.type='text';
       this.input.className='smartmulti-search';
       this.input.autocomplete='off';
+      this.input.enterKeyHint='next';
+      this.input.setAttribute('enterkeyhint','next');
       this.input.placeholder=select.dataset.placeholder || 'Pesquisar...';
       this.menu=document.createElement('div');
       this.menu.className='smartmulti-menu';
@@ -574,6 +645,12 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
         if(!this.disabled && !e.target.closest('.smartmulti-chip button')) this.input.focus();
       });
       this.input.addEventListener('keydown',(e)=>{
+        if(e.key==='Enter'){
+          e.preventDefault();
+          e.stopPropagation();
+          this.open();
+          return;
+        }
         if(e.key==='Escape') this.close();
         if(e.key==='Backspace' && !this.input.value){
           const selected=this.selectedOptions();
@@ -641,9 +718,12 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
         b.className='smartmulti-option'+(opt.selected?' selected':'');
         const left=document.createElement('span');
         left.textContent=opt.textContent.trim();
-        const right=document.createElement('small');
-        right.textContent=opt.selected?'✓ Selecionado':'Selecionar';
-        b.appendChild(left);b.appendChild(right);
+        b.appendChild(left);
+        if(opt.selected){
+          const right=document.createElement('small');
+          right.textContent='✓';
+          b.appendChild(right);
+        }
         b.addEventListener('click',(e)=>{
           e.preventDefault();
           e.stopPropagation();
@@ -728,6 +808,9 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
   });
 
   const atualizados=document.getElementById('atualizados');
+  const advancedPanel=document.getElementById('advanced-panel');
+  const advancedToggle=document.getElementById('toggle-avancados');
+  const atualizadosWarning=document.getElementById('atualizados-warning');
   const idadeCheck=document.getElementById('idade_check');
   const idadeMin=document.getElementById('idade_min');
   const idadeMax=document.getElementById('idade_max');
@@ -735,18 +818,39 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
   const idadeCard=document.getElementById('idade-card');
   const atualizadosCard=document.getElementById('atualizados-card');
 
+  function setAdvancedOpen(open){
+    if(atualizados.checked) open=false;
+    advancedPanel.classList.toggle('show',!!open);
+    advancedToggle.textContent=open?'▲ Ocultar filtros avançados':'⚙️ Exibir filtros avançados';
+  }
+
+  advancedToggle.addEventListener('click',()=>{
+    setAdvancedOpen(!advancedPanel.classList.contains('show'));
+  });
+
   function syncModo(){
     const a=atualizados.checked;
+
+    if(a){
+      cboMulti.clear();
+      faixaMulti.clear();
+      idadeCheck.checked=false;
+      setAdvancedOpen(false);
+    }
+
     cboMulti.setDisabled(a);
     faixaMulti.setDisabled(a);
     idadeCheck.disabled=a;
-    if(a) idadeCheck.checked=false;
     idadeMin.disabled=a||!idadeCheck.checked;
     idadeMax.disabled=a||!idadeCheck.checked;
     ceps.disabled=false;
+
+    advancedToggle.disabled=a;
+    atualizadosWarning.classList.toggle('show',a);
     idadeCard.classList.toggle('on',idadeCheck.checked&&!a);
     atualizadosCard.classList.toggle('on',a);
   }
+
   atualizados.addEventListener('change',syncModo);
   idadeCheck.addEventListener('change',syncModo);
   syncModo();
@@ -903,6 +1007,14 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
     document.getElementById(id).addEventListener('input',marcarContagemDesatualizada);
   });
 
+  const exportForm=document.getElementById('export-form');
+  exportForm.addEventListener('keydown',(e)=>{
+    if(e.key==='Enter' && e.target.tagName!=='BUTTON'){
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
+
   const calcBtn=document.getElementById('calcular-quantidade');
   if(calcBtn){
     calcBtn.addEventListener('click',()=>{
@@ -930,6 +1042,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
     document.querySelector('input[name="quantidade"]').value='5000';
     atualizarCidades();
     syncModo();
+    setAdvancedOpen(false);
     countSequence++;
     if(countPollTimer){clearTimeout(countPollTimer);countPollTimer=null;}
     esconderContagem();
@@ -1027,6 +1140,7 @@ def painel():
         usuario=u,
         reservado=reservado,
         disponivel=disponivel,
+        whatsapp_saldo_url=WHATSAPP_SALDO_URL,
         recentes=recentes,
         menu_pronto=menu_pronto,
         ufs=opcoes("uf"),
