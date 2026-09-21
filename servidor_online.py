@@ -370,6 +370,37 @@ BASE_STYLE = r"""
 .btn-mini.download{background:#0f9b8e;color:#fff;border-color:#0f9b8e}
 .btn-mini.download:hover{background:#0c857a}
 @media(max-width:900px){.count-copy strong{font-size:21px}.history-actions{min-width:150px}}
+
+.precount-warning{
+  margin-top:12px;
+  border:2px solid #f6c453;
+  background:#fff9e8;
+  color:#725100;
+  border-radius:12px;
+  padding:12px 14px;
+  font-size:12px;
+  font-weight:800;
+  line-height:1.5
+}
+.precount-warning strong{color:#8a5d00}
+.btn-calc{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  border:0;background:#2563eb;color:#fff;border-radius:11px;
+  padding:11px 16px;font-size:12px;font-weight:850;cursor:pointer;
+  box-shadow:0 1px 2px rgba(15,23,42,.08)
+}
+.btn-calc:hover{background:#1d4ed8}
+.btn-calc:disabled{opacity:.52;cursor:not-allowed}
+.btn-clean-strong{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  border:1px solid #f0a0a0;background:#fff2f2;color:#b42318;
+  border-radius:11px;padding:10px 14px;font-size:12px;font-weight:850;
+  cursor:pointer
+}
+.btn-clean-strong:hover{background:#ffe7e7;border-color:#e77f7f}
+.calc-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px}
+.calc-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.filename-help{font-size:10px;color:#98a2b3;margin-top:5px}
 </style>
 """
 
@@ -447,7 +478,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 <div class='field w3'>
 <label>CEP(s)</label>
 <input class='compact-input' id='ceps' name='ceps' placeholder='45000000, 45020000'>
-<div class='helper'>Somente no modo Atualizados 2026.</div>
+<div class='helper'>Aplicado na exportação tanto na base Atualizados 2026 quanto na base detalhada.</div>
 </div>
 
 <div class='field w3'>
@@ -460,6 +491,12 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 <label>DDD(s)</label>
 <input class='compact-input' id='ddds' name='ddds' placeholder='77, 73, 75'>
 <div class='helper'>Separe vários DDDs por vírgula.</div>
+</div>
+
+<div class='field w3'>
+<label>Nome do arquivo</label>
+<input class='compact-input' id='nome_arquivo' name='nome_arquivo' maxlength='80' placeholder='Ex.: CLIENTES_BAHIA'>
+<div class='filename-help'>Opcional. Data e hora serão acrescentadas automaticamente para evitar nomes repetidos.</div>
 </div>
 
 <div class='field w3'>
@@ -487,11 +524,16 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 </div>
 </div>
 
-<div class='notice' style='margin-top:14px'>A quantidade solicitada fica reservada enquanto o pedido estiver aguardando/processando. O saldo só é descontado quando a exportação termina com sucesso, usando a quantidade realmente entregue.</div>
-<div class='form-actions'>
-<button id='limpar-filtros' class='btn-clean' type='button'>Limpar filtros</button>
-<button class='btn' type='submit' {% if not menu_pronto %}disabled{% endif %}>📤 Criar pedido de exportação</button>
+<div class='precount-warning'><strong>⚠️ Importante:</strong> Bairro, DDD e CEP são aplicados somente durante a exportação e <u>não entram na pré-contagem</u>. A quantidade calculada pode, portanto, ser maior que a quantidade realmente disponível após esses três filtros.</div>
+<div class='notice' style='margin-top:12px'>A quantidade solicitada fica reservada enquanto o pedido estiver aguardando/processando. O saldo só é descontado quando a exportação termina com sucesso, usando a quantidade realmente entregue.</div>
+<div class='calc-row'>
+  <div class='calc-actions'>
+    <button id='calcular-quantidade' class='btn-calc' type='button' {% if disponivel <= 0 %}disabled title='Sem saldo disponível'{% endif %}>🔢 Calcular quantidade</button>
+    <button id='limpar-filtros' class='btn-clean-strong' type='button'>🧹 Limpar filtros</button>
+  </div>
+  <button class='btn' type='submit' {% if not menu_pronto %}disabled{% endif %}>📤 Criar pedido de exportação</button>
 </div>
+{% if disponivel <= 0 %}<div class='flash erro' style='margin-top:10px'>Seu saldo disponível está zerado. A pré-contagem e novos pedidos ficam indisponíveis até adicionar saldo.</div>{% endif %}
 </form>
 </div>
 
@@ -526,7 +568,8 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
       select.insertAdjacentElement('afterend',this.root);
 
       this.input.addEventListener('focus',()=>this.open());
-      this.input.addEventListener('input',()=>this.renderMenu());
+      this.input.addEventListener('click',(e)=>{e.stopPropagation();this.open();});
+      this.input.addEventListener('input',()=>{this.open();this.renderMenu();});
       this.control.addEventListener('click',(e)=>{
         if(!this.disabled && !e.target.closest('.smartmulti-chip button')) this.input.focus();
       });
@@ -601,10 +644,13 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
         const right=document.createElement('small');
         right.textContent=opt.selected?'✓ Selecionado':'Selecionar';
         b.appendChild(left);b.appendChild(right);
-        b.addEventListener('click',()=>{
+        b.addEventListener('click',(e)=>{
+          e.preventDefault();
+          e.stopPropagation();
           opt.selected=!opt.selected;
           this.input.value='';
           this.changed();
+          this.open();
           this.input.focus();
         });
         this.menu.appendChild(b);
@@ -697,7 +743,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
     if(a) idadeCheck.checked=false;
     idadeMin.disabled=a||!idadeCheck.checked;
     idadeMax.disabled=a||!idadeCheck.checked;
-    ceps.disabled=!a;
+    ceps.disabled=false;
     idadeCard.classList.toggle('on',idadeCheck.checked&&!a);
     atualizadosCard.classList.toggle('on',a);
   }
@@ -738,7 +784,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
       filtrar_idade:(!atual && idadeCheck.checked),
       idade_min:Number(idadeMin.value||0),
       idade_max:Number(idadeMax.value||90),
-      ceps:atual?splitComma(document.getElementById('ceps').value,true):[],
+      ceps:[],
       atualizados_2026:atual
     };
   }
@@ -747,8 +793,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
     return Boolean(
       f.atualizados_2026 ||
       f.ufs.length || f.cidades.length || f.sexos.length ||
-      f.cbos.length || f.faixas_renda.length || f.filtrar_idade ||
-      f.ceps.length
+      f.cbos.length || f.faixas_renda.length || f.filtrar_idade
     );
   }
 
@@ -808,11 +853,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
     countState.textContent='Calculando...';
     countState.className='count-state loading';
 
-    const temBairro=splitComma(document.getElementById('bairros').value).length>0;
-    const temDDD=splitComma(document.getElementById('ddds').value,true).length>0;
-    countNote.textContent=(temBairro||temDDD)
-      ? 'Bairro e DDD são aplicados na exportação e não entram nesta pré-contagem.'
-      : 'Quantidade estimada pelos bancos locais de contagem.';
+    countNote.textContent='Bairro, DDD e CEP não entram nesta pré-contagem; eles são aplicados somente na exportação.';
 
     try{
       const r=await fetch('/api/contagem/solicitar',{
@@ -838,22 +879,41 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
     }
   }
 
-  function agendarContagem(){
-    if(countTimer) clearTimeout(countTimer);
-    countTimer=setTimeout(solicitarContagem,550);
+  function marcarContagemDesatualizada(){
+    if(countPanel.classList.contains('show') && countValue.textContent!=='—'){
+      countState.textContent='Filtros alterados — calcule novamente';
+      countState.className='count-state error';
+    }
   }
 
   [ufSelect,cidadeSelect,sexoSelect,cboSelect,faixaSelect,atualizados,idadeCheck,idadeMin,idadeMax]
-    .forEach(el=>el.addEventListener('change',agendarContagem));
+    .forEach(el=>el.addEventListener('change',marcarContagemDesatualizada));
   ['ceps','bairros','ddds'].forEach(id=>{
-    document.getElementById(id).addEventListener('input',agendarContagem);
+    document.getElementById(id).addEventListener('input',marcarContagemDesatualizada);
   });
+
+  const calcBtn=document.getElementById('calcular-quantidade');
+  if(calcBtn){
+    calcBtn.addEventListener('click',()=>{
+      const f=filtrosContagem();
+      if(!temFiltroContavel(f)){
+        countPanel.classList.add('show');
+        countValue.textContent='—';
+        countState.textContent='Selecione UF, cidade, sexo, CBO, renda, idade ou Atualizados 2026.';
+        countState.className='count-state error';
+        countNote.textContent='Bairro, DDD e CEP não entram na pré-contagem.';
+        return;
+      }
+      solicitarContagem();
+    });
+  }
 
   document.getElementById('limpar-filtros').addEventListener('click',()=>{
     [ufMulti,cidadeMulti,sexoMulti,cboMulti,faixaMulti].forEach(x=>x.clear());
     document.getElementById('ceps').value='';
     document.getElementById('bairros').value='';
     document.getElementById('ddds').value='';
+    document.getElementById('nome_arquivo').value='';
     idadeCheck.checked=false;
     atualizados.checked=false;
     document.querySelector('input[name="quantidade"]').value='5000';
@@ -994,12 +1054,7 @@ def normalizar_filtros_contagem(dados):
     except Exception:
         idade_min, idade_max = 0, 90
 
-    ceps = []
-    if atualizados:
-        for x in lista("ceps"):
-            d = re.sub(r"\D", "", x)
-            if d:
-                ceps.append(d.zfill(8))
+    ceps = []  # CEP não participa da pré-contagem.
 
     return {
         "ufs": [x.upper() for x in lista("ufs") if len(x.strip()) == 2],
@@ -1028,6 +1083,11 @@ def tem_filtro_contagem(f):
 @login_required
 def solicitar_contagem():
     u = usuario_atual()
+    reservado = saldo_reservado(u["id"])
+    disponivel = int(u["saldo"]) - reservado
+    if disponivel <= 0:
+        return jsonify({"erro": "saldo_indisponivel", "mensagem": "Sem saldo disponível para calcular quantidade."}), 403
+
     dados = request.get_json(silent=True) or {}
     recebido = str(dados.get("csrf_token", ""))
     esperado = str(session.get("csrf_token", ""))
@@ -1227,11 +1287,16 @@ def criar_pedido():
         "filtrar_idade": filtrar_idade,
         "idade_min": idade_min,
         "idade_max": idade_max,
-        "ceps": split_texto(request.form.get("ceps")) if atualizados else [],
+        "ceps": split_texto(request.form.get("ceps")),
         "bairros": split_texto(request.form.get("bairros")),
         "ddds": split_texto(request.form.get("ddds")),
         "atualizados_2026": atualizados,
     }
+
+    nome_arquivo = str(request.form.get("nome_arquivo", "") or "").strip()
+    nome_arquivo = re.sub(r"[^A-Za-zÀ-ÿ0-9 _.-]+", "", nome_arquivo)
+    nome_arquivo = re.sub(r"\s+", "_", nome_arquivo).strip("._- ")
+    filtros["nome_arquivo"] = nome_arquivo[:80] if nome_arquivo else "CONTATOS"
 
     with conectar() as conn:
         with conn.cursor() as cur:
