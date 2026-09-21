@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import re
 import secrets
@@ -167,6 +168,22 @@ def init_db():
                             valor TEXT NOT NULL
                         )
                     """)
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS consultas_contagem (
+                            id BIGSERIAL PRIMARY KEY,
+                            usuario_id BIGINT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+                            chave_hash VARCHAR(64) NOT NULL,
+                            filtros_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                            status VARCHAR(20) NOT NULL DEFAULT 'AGUARDANDO',
+                            quantidade BIGINT,
+                            erro TEXT,
+                            criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            iniciado_em TIMESTAMPTZ,
+                            concluido_em TIMESTAMPTZ
+                        )
+                    """)
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_contagem_status ON consultas_contagem(status, id)")
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_contagem_hash ON consultas_contagem(usuario_id, chave_hash, concluido_em DESC)")
                     cur.execute("CREATE INDEX IF NOT EXISTS idx_pedidos_status ON pedidos(status)")
                     cur.execute("CREATE INDEX IF NOT EXISTS idx_pedidos_usuario ON pedidos(usuario_id)")
                     cur.execute("CREATE INDEX IF NOT EXISTS idx_menu_uf_cidade_uf ON menu_uf_cidade(uf)")
@@ -338,6 +355,21 @@ BASE_STYLE = r"""
 .order-success strong{font-size:15px}
 .order-file{font-size:11px;color:var(--muted);margin-top:4px}
 @media(max-width:900px){.smartmulti-chip span{max-width:170px}.form-actions .btn{width:100%}}
+
+.count-panel{display:none;margin:0 0 18px;border:1px solid #d5eee9;background:#f5fcfa;border-radius:14px;padding:14px 16px;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.count-panel.show{display:flex}
+.count-copy span{display:block;color:var(--muted);font-size:11px;margin-bottom:2px}
+.count-copy strong{display:block;font-size:24px;color:#0f766e;line-height:1.15}
+.count-copy small{display:block;color:#7b8794;margin-top:4px;font-size:10px}
+.count-state{font-size:11px;font-weight:800;color:#667085}
+.count-state.loading{color:#0f766e}
+.count-state.error{color:#b42318}
+.history-actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.btn-mini{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border:1px solid #d9e2ea;background:#fff;color:#344054;border-radius:9px;padding:7px 9px;font-size:11px;font-weight:800;white-space:nowrap}
+.btn-mini:hover{border-color:#b7c4d0;background:#f8fafc}
+.btn-mini.download{background:#0f9b8e;color:#fff;border-color:#0f9b8e}
+.btn-mini.download:hover{background:#0c857a}
+@media(max-width:900px){.count-copy strong{font-size:21px}.history-actions{min-width:150px}}
 </style>
 """
 
@@ -358,6 +390,16 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
   <div class='filter-badge'>✓ Filtros combináveis</div>
 </div>
 {% if not menu_pronto %}<div class='flash erro'>O agente do seu PC ainda não sincronizou os menus. Inicie o agente local primeiro.</div>{% endif %}
+
+<div id='count-panel' class='count-panel' aria-live='polite'>
+  <div class='count-copy'>
+    <span>Contatos encontrados</span>
+    <strong id='count-value'>—</strong>
+    <small id='count-note'>A contagem considera os filtros compatíveis com os bancos de quantidade.</small>
+  </div>
+  <div id='count-state' class='count-state'></div>
+</div>
+
 <form id='export-form' method='post' action='{{url_for("criar_pedido")}}'>
 <input type='hidden' name='csrf_token' value='{{csrf_token()}}'>
 <div class='fields'>
@@ -453,7 +495,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 </form>
 </div>
 
-<div class='card w12'><div class='section-title'>📋 Últimos pedidos</div><div class='table-wrap'>{% if recentes %}<table><thead><tr><th>Pedido</th><th>Quantidade</th><th>Status</th><th>Progresso</th><th>Mensagem</th><th>Criado</th></tr></thead><tbody>{% for p in recentes %}<tr><td><a href='{{url_for("ver_pedido",pedido_id=p.id)}}'><b>#{{p.id}}</b></a></td><td>{{"{:,}".format(p.quantidade).replace(",", ".")}}</td><td><span class='pill {{p.status}}'>{{p.status}}</span></td><td><div class='progress'><span style='width:{{p.progresso}}%'></span></div><small>{{p.progresso}}%</small></td><td>{{p.mensagem or ''}}</td><td>{{p.criado_em}}</td></tr>{% endfor %}</tbody></table>{% else %}<p class='muted'>Nenhum pedido criado ainda.</p>{% endif %}</div></div>
+<div class='card w12'><div class='section-title'>📋 Últimos pedidos</div><div class='table-wrap'>{% if recentes %}<table><thead><tr><th>Pedido</th><th>Quantidade</th><th>Status</th><th>Progresso</th><th>Mensagem</th><th>Criado</th><th>Ações</th></tr></thead><tbody>{% for p in recentes %}<tr><td><a href='{{url_for("ver_pedido",pedido_id=p.id)}}'><b>#{{p.id}}</b></a></td><td>{{"{:,}".format(p.quantidade).replace(",", ".")}}</td><td><span class='pill {{p.status}}'>{{p.status}}</span></td><td><div class='progress'><span style='width:{{p.progresso}}%'></span></div><small>{{p.progresso}}%</small></td><td>{{p.mensagem or ''}}</td><td>{{p.criado_em}}</td><td><div class='history-actions'><a class='btn-mini' href='{{url_for("ver_pedido",pedido_id=p.id)}}'>Abrir</a>{% if p.status=='CONCLUIDO' and p.arquivo_chave %}<a class='btn-mini download' href='{{url_for("baixar_pedido",pedido_id=p.id)}}'>📥 Baixar</a>{% endif %}</div></td></tr>{% endfor %}</tbody></table>{% else %}<p class='muted'>Nenhum pedido criado ainda.</p>{% endif %}</div></div>
 </div></div>
 
 <script>
@@ -663,6 +705,150 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
   idadeCheck.addEventListener('change',syncModo);
   syncModo();
 
+  const countPanel=document.getElementById('count-panel');
+  const countValue=document.getElementById('count-value');
+  const countState=document.getElementById('count-state');
+  const countNote=document.getElementById('count-note');
+  const csrfToken=document.querySelector('input[name="csrf_token"]').value;
+  let countTimer=null;
+  let countPollTimer=null;
+  let countSequence=0;
+
+  function selectedValues(select){
+    return Array.from(select.selectedOptions).map(o=>o.value);
+  }
+
+  function splitComma(value, digitsOnly=false){
+    const seen=new Set();
+    return String(value||'').split(/[,;\n\r]+/).map(x=>x.trim()).filter(Boolean).map(x=>{
+      if(!digitsOnly) return x;
+      const d=x.replace(/\D/g,'');
+      return d;
+    }).filter(Boolean).filter(x=>{if(seen.has(x))return false;seen.add(x);return true});
+  }
+
+  function filtrosContagem(){
+    const atual=atualizados.checked;
+    return {
+      ufs:selectedValues(ufSelect),
+      cidades:selectedValues(cidadeSelect),
+      sexos:selectedValues(sexoSelect),
+      cbos:atual?[]:selectedValues(cboSelect),
+      faixas_renda:atual?[]:selectedValues(faixaSelect),
+      filtrar_idade:(!atual && idadeCheck.checked),
+      idade_min:Number(idadeMin.value||0),
+      idade_max:Number(idadeMax.value||90),
+      ceps:atual?splitComma(document.getElementById('ceps').value,true):[],
+      atualizados_2026:atual
+    };
+  }
+
+  function temFiltroContavel(f){
+    return Boolean(
+      f.atualizados_2026 ||
+      f.ufs.length || f.cidades.length || f.sexos.length ||
+      f.cbos.length || f.faixas_renda.length || f.filtrar_idade ||
+      f.ceps.length
+    );
+  }
+
+  function esconderContagem(){
+    countPanel.classList.remove('show');
+    countState.textContent='';
+    countValue.textContent='—';
+  }
+
+  function formatarNumero(n){
+    return new Intl.NumberFormat('pt-BR').format(Number(n||0));
+  }
+
+  async function consultarStatus(id, seq){
+    if(seq!==countSequence) return;
+    try{
+      const r=await fetch('/api/contagem/'+id,{headers:{'Accept':'application/json'}});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const data=await r.json();
+      if(seq!==countSequence) return;
+      if(data.status==='CONCLUIDO'){
+        countValue.textContent=formatarNumero(data.quantidade);
+        countState.textContent='Atualizado';
+        countState.className='count-state';
+        return;
+      }
+      if(data.status==='ERRO'){
+        countValue.textContent='—';
+        countState.textContent='Não foi possível calcular';
+        countState.className='count-state error';
+        return;
+      }
+      countState.textContent=data.status==='PROCESSANDO'?'Calculando...':'Aguardando agente...';
+      countState.className='count-state loading';
+      countPollTimer=setTimeout(()=>consultarStatus(id,seq),900);
+    }catch(e){
+      if(seq!==countSequence) return;
+      countValue.textContent='—';
+      countState.textContent='Agente/servidor indisponível';
+      countState.className='count-state error';
+    }
+  }
+
+  async function solicitarContagem(){
+    const f=filtrosContagem();
+    countSequence++;
+    const seq=countSequence;
+    if(countPollTimer){clearTimeout(countPollTimer);countPollTimer=null;}
+
+    if(!temFiltroContavel(f)){
+      esconderContagem();
+      return;
+    }
+
+    countPanel.classList.add('show');
+    countValue.textContent='—';
+    countState.textContent='Calculando...';
+    countState.className='count-state loading';
+
+    const temBairro=splitComma(document.getElementById('bairros').value).length>0;
+    const temDDD=splitComma(document.getElementById('ddds').value,true).length>0;
+    countNote.textContent=(temBairro||temDDD)
+      ? 'Bairro e DDD são aplicados na exportação e não entram nesta pré-contagem.'
+      : 'Quantidade estimada pelos bancos locais de contagem.';
+
+    try{
+      const r=await fetch('/api/contagem/solicitar',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Accept':'application/json'},
+        body:JSON.stringify({csrf_token:csrfToken,filtros:f})
+      });
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const data=await r.json();
+      if(seq!==countSequence) return;
+      if(data.status==='CONCLUIDO'){
+        countValue.textContent=formatarNumero(data.quantidade);
+        countState.textContent=data.cache?'Resultado recente':'Atualizado';
+        countState.className='count-state';
+      }else{
+        consultarStatus(data.id,seq);
+      }
+    }catch(e){
+      if(seq!==countSequence) return;
+      countValue.textContent='—';
+      countState.textContent='Não foi possível solicitar a contagem';
+      countState.className='count-state error';
+    }
+  }
+
+  function agendarContagem(){
+    if(countTimer) clearTimeout(countTimer);
+    countTimer=setTimeout(solicitarContagem,550);
+  }
+
+  [ufSelect,cidadeSelect,sexoSelect,cboSelect,faixaSelect,atualizados,idadeCheck,idadeMin,idadeMax]
+    .forEach(el=>el.addEventListener('change',agendarContagem));
+  ['ceps','bairros','ddds'].forEach(id=>{
+    document.getElementById(id).addEventListener('input',agendarContagem);
+  });
+
   document.getElementById('limpar-filtros').addEventListener('click',()=>{
     [ufMulti,cidadeMulti,sexoMulti,cboMulti,faixaMulti].forEach(x=>x.clear());
     document.getElementById('ceps').value='';
@@ -673,6 +859,9 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
     document.querySelector('input[name="quantidade"]').value='5000';
     atualizarCidades();
     syncModo();
+    countSequence++;
+    if(countPollTimer){clearTimeout(countPollTimer);countPollTimer=null;}
+    esconderContagem();
   });
 })();
 </script></body></html>"""
@@ -779,6 +968,148 @@ def painel():
         idade_min=int(config_menu("idade_min", "0") or 0),
         idade_max=min(90, int(config_menu("idade_max", "90") or 90)),
     )
+
+
+def normalizar_filtros_contagem(dados):
+    dados = dados if isinstance(dados, dict) else {}
+
+    def lista(nome):
+        valor = dados.get(nome, [])
+        if not isinstance(valor, list):
+            return []
+        saida = []
+        vistos = set()
+        for x in valor:
+            x = str(x).strip()
+            if x and x not in vistos:
+                vistos.add(x)
+                saida.append(x)
+        return saida[:500]
+
+    atualizados = bool(dados.get("atualizados_2026", False))
+    filtrar_idade = bool(dados.get("filtrar_idade", False)) and not atualizados
+    try:
+        idade_min = max(0, min(90, int(dados.get("idade_min", 0))))
+        idade_max = max(0, min(90, int(dados.get("idade_max", 90))))
+    except Exception:
+        idade_min, idade_max = 0, 90
+
+    ceps = []
+    if atualizados:
+        for x in lista("ceps"):
+            d = re.sub(r"\D", "", x)
+            if d:
+                ceps.append(d.zfill(8))
+
+    return {
+        "ufs": [x.upper() for x in lista("ufs") if len(x.strip()) == 2],
+        "cidades": lista("cidades"),
+        "sexos": [x.upper() for x in lista("sexos") if x.upper() in {"F", "M", "I"}],
+        "cbos": [] if atualizados else lista("cbos"),
+        "faixas_renda": [] if atualizados else lista("faixas_renda"),
+        "filtrar_idade": filtrar_idade,
+        "idade_min": idade_min,
+        "idade_max": idade_max,
+        "ceps": ceps,
+        "atualizados_2026": atualizados,
+    }
+
+
+def tem_filtro_contagem(f):
+    return bool(
+        f["atualizados_2026"]
+        or f["ufs"] or f["cidades"] or f["sexos"]
+        or f["cbos"] or f["faixas_renda"] or f["filtrar_idade"]
+        or f["ceps"]
+    )
+
+
+@app.route("/api/contagem/solicitar", methods=["POST"])
+@login_required
+def solicitar_contagem():
+    u = usuario_atual()
+    dados = request.get_json(silent=True) or {}
+    recebido = str(dados.get("csrf_token", ""))
+    esperado = str(session.get("csrf_token", ""))
+    if not esperado or not recebido or not secrets.compare_digest(esperado, recebido):
+        return jsonify({"erro": "csrf_invalido"}), 400
+
+    filtros = normalizar_filtros_contagem(dados.get("filtros"))
+    if not tem_filtro_contagem(filtros):
+        return jsonify({"erro": "selecione_um_filtro"}), 400
+
+    canonico = json.dumps(filtros, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    chave = hashlib.sha256(canonico.encode("utf-8")).hexdigest()
+
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            # Reaproveita por 10 minutos a mesma contagem já concluída.
+            cur.execute("""
+                SELECT id, status, quantidade
+                FROM consultas_contagem
+                WHERE usuario_id=%s
+                  AND chave_hash=%s
+                  AND status='CONCLUIDO'
+                  AND concluido_em > NOW() - INTERVAL '10 minutes'
+                ORDER BY id DESC
+                LIMIT 1
+            """, (u["id"], chave))
+            cache = cur.fetchone()
+            if cache:
+                return jsonify({
+                    "id": cache["id"],
+                    "status": "CONCLUIDO",
+                    "quantidade": int(cache["quantidade"] or 0),
+                    "cache": True,
+                })
+
+            # Se a mesma consulta já está na fila/processando, usa a mesma.
+            cur.execute("""
+                SELECT id, status
+                FROM consultas_contagem
+                WHERE usuario_id=%s AND chave_hash=%s
+                  AND status IN ('AGUARDANDO','PROCESSANDO')
+                ORDER BY id DESC
+                LIMIT 1
+            """, (u["id"], chave))
+            pendente = cur.fetchone()
+            if pendente:
+                return jsonify({"id": pendente["id"], "status": pendente["status"], "cache": False})
+
+            cur.execute("""
+                INSERT INTO consultas_contagem
+                    (usuario_id, chave_hash, filtros_json, status)
+                VALUES (%s,%s,%s::jsonb,'AGUARDANDO')
+                RETURNING id
+            """, (u["id"], chave, canonico))
+            cid = cur.fetchone()["id"]
+        conn.commit()
+
+    return jsonify({"id": cid, "status": "AGUARDANDO", "cache": False})
+
+
+@app.route("/api/contagem/<int:consulta_id>", methods=["GET"])
+@login_required
+def status_contagem(consulta_id):
+    u = usuario_atual()
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            if u["perfil"] == "ADMIN":
+                cur.execute("SELECT id,status,quantidade,erro FROM consultas_contagem WHERE id=%s", (consulta_id,))
+            else:
+                cur.execute(
+                    "SELECT id,status,quantidade,erro FROM consultas_contagem WHERE id=%s AND usuario_id=%s",
+                    (consulta_id, u["id"]),
+                )
+            c = cur.fetchone()
+    if not c:
+        return jsonify({"erro": "consulta_nao_encontrada"}), 404
+    return jsonify({
+        "id": c["id"],
+        "status": c["status"],
+        "quantidade": int(c["quantidade"] or 0) if c["quantidade"] is not None else None,
+        "erro": c["erro"],
+    })
 
 
 @app.route("/pedido/<int:pedido_id>")
@@ -1047,6 +1378,76 @@ def sincronizar_menu():
         conn.commit()
     return jsonify({"ok": True, "ufs": len(dados.get("ufs", [])), "cidades": len(dados.get("uf_cidade", []))})
 
+
+
+@app.route("/api/contagens/proxima", methods=["POST"])
+@api_required
+def proxima_contagem():
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            cur.execute("BEGIN")
+            cur.execute("""
+                SELECT c.*
+                FROM consultas_contagem c
+                JOIN usuarios u ON u.id=c.usuario_id
+                WHERE c.status='AGUARDANDO' AND u.ativo=TRUE
+                ORDER BY c.id
+                FOR UPDATE OF c SKIP LOCKED
+                LIMIT 1
+            """)
+            c = cur.fetchone()
+            if not c:
+                conn.commit()
+                return jsonify({"consulta": None})
+            cur.execute(
+                "UPDATE consultas_contagem SET status='PROCESSANDO', iniciado_em=NOW() WHERE id=%s",
+                (c["id"],),
+            )
+            conn.commit()
+
+    filtros = c["filtros_json"] or {}
+    if isinstance(filtros, str):
+        filtros = json.loads(filtros)
+    return jsonify({"consulta": {"id": c["id"], "filtros": filtros}})
+
+
+@app.route("/api/contagens/<int:consulta_id>/concluir", methods=["POST"])
+@api_required
+def concluir_contagem(consulta_id):
+    dados = request.get_json(force=True) or {}
+    try:
+        quantidade = max(0, int(dados.get("quantidade", 0)))
+    except Exception:
+        return jsonify({"erro": "quantidade_invalida"}), 400
+
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE consultas_contagem
+                SET status='CONCLUIDO', quantidade=%s, erro=NULL, concluido_em=NOW()
+                WHERE id=%s AND status='PROCESSANDO'
+            """, (quantidade, consulta_id))
+            ok = cur.rowcount > 0
+        conn.commit()
+    if not ok:
+        return jsonify({"erro": "consulta_nao_encontrada_ou_status_invalido"}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/contagens/<int:consulta_id>/falhar", methods=["POST"])
+@api_required
+def falhar_contagem(consulta_id):
+    dados = request.get_json(force=True) or {}
+    erro = str(dados.get("erro", "Falha na contagem"))[:2000]
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE consultas_contagem
+                SET status='ERRO', erro=%s, concluido_em=NOW()
+                WHERE id=%s AND status IN ('AGUARDANDO','PROCESSANDO')
+            """, (erro, consulta_id))
+        conn.commit()
+    return jsonify({"ok": True})
 
 @app.route("/api/pedidos/proximo", methods=["POST"])
 @api_required
