@@ -516,7 +516,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 <div class='field w3'>
 <label>CEP(s)</label>
 <input class='compact-input' id='ceps' name='ceps' enterkeyhint='next' placeholder='45000000, 45020000'>
-<div class='helper'>Aplicado na exportação tanto na base Atualizados 2026 quanto na base detalhada.</div>
+<div class='helper'>Separe vários Ceps por vírgula..</div>
 </div>
 
 <div class='field w3'>
@@ -527,13 +527,13 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 
 <div class='field w3'>
 <label>DDD(s)</label>
-<input class='compact-input' id='ddds' name='ddds' enterkeyhint='next' placeholder='77, 73, 75'>
+<input class='compact-input' id='ddds' name='ddds' enterkeyhint='next' placeholder='11, 12, 19'>
 <div class='helper'>Separe vários DDDs por vírgula.</div>
 </div>
 
 <div class='field w3'>
 <label>Nome do arquivo</label>
-<input class='compact-input' id='nome_arquivo' name='nome_arquivo' maxlength='80' enterkeyhint='next' placeholder='Ex.: CLIENTES_BAHIA'>
+<input class='compact-input' id='nome_arquivo' name='nome_arquivo' maxlength='80' enterkeyhint='next' placeholder='Ex.: CLIENTES_SAO_PAULO'>
 <div class='filename-help'>Opcional. Data e hora serão acrescentadas automaticamente para evitar nomes repetidos.</div>
 </div>
 
@@ -939,7 +939,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
         countState.className='count-state error';
         return;
       }
-      countState.textContent=data.status==='PROCESSANDO'?'Calculando...':'Aguardando agente...';
+      countState.textContent=data.status==='PROCESSANDO'?'Calculando...':'Cauculando';
       countState.className='count-state loading';
       countPollTimer=setTimeout(()=>consultarStatus(id,seq),900);
     }catch(e){
@@ -1661,7 +1661,7 @@ def proximo_pedido():
             if not p:
                 conn.commit()
                 return jsonify({"pedido": None})
-            cur.execute("UPDATE pedidos SET status='PROCESSANDO', iniciado_em=NOW(), progresso=1, mensagem='Pedido recebido pelo computador.' WHERE id=%s", (p["id"],))
+            cur.execute("UPDATE pedidos SET status='PROCESSANDO', iniciado_em=NOW(), progresso=1, mensagem='Pedido recebido .' WHERE id=%s", (p["id"],))
             conn.commit()
     filtros = p["filtros_json"] or {}
     if isinstance(filtros, str):
