@@ -1,29 +1,21 @@
-# Consultas Contatos Zap — V7
+# Consultas Contatos Zap — Servidor V9
 
-Novidades desta versão:
-- marca/título alterados para **Consultas Contatos Zap**;
-- botão **Adicionar saldo** no painel, abrindo o WhatsApp;
-- CBO, renda e idade ficam ocultos em **Filtros avançados**;
-- aviso de que filtros avançados podem reduzir significativamente a quantidade de números ativos;
-- ao ativar **Atualizados 2026**, CBO, renda e idade são limpos e aparece um aviso;
-- removido o texto `Selecionar` das listas; itens já marcados mostram apenas `✓`;
-- tecla Enter não envia mais o formulário acidentalmente;
-- campos pesquisáveis usam `enterkeyhint=next` para melhorar o teclado no celular;
-- mantida a rolagem automática até `Contatos encontrados` somente depois que a contagem conclui;
-- todo o restante da V6 (Bucket, histórico, download, pré-contagem manual, CEP, nome do arquivo etc.) foi preservado.
+Esta versão parte da V7 visual e adiciona integração com o histórico por cliente usado pelo Agente V9.
 
-## Nova variável do Railway para o WhatsApp
+## Novidades
+- campo **Telefone do cliente** obrigatório na criação de novos clientes;
+- telefone único por cliente;
+- clientes antigos sem telefone aparecem como **SEM TELEFONE** no Admin;
+- botão no Admin para cadastrar/alterar o telefone de clientes existentes;
+- cada novo pedido grava uma cópia do telefone do cliente no próprio pedido;
+- a API do agente envia `telefone_cliente` junto do pedido;
+- endpoint seguro de retomada para o Agente V9 finalizar pedidos interrompidos sem gerar outro conjunto de contatos;
+- visual e funcionalidades da V7 foram preservados;
+- alerta de pré-contagem mantido no amarelo discreto solicitado.
 
-Adicione em `consulta_completas_web > Variables`:
+## Depois do deploy
+Entre em **Administração** e preencha o telefone de todos os clientes antigos antes que eles façam novos pedidos.
 
-`WHATSAPP_NUMBER`
+Formato recomendado: `77998334733` (DDD + número, sem +55). Se digitar +55, o servidor normaliza automaticamente.
 
-Use somente números, incluindo país e DDD. Exemplo de formato:
-
-`5577999999999`
-
-Não use `+`, espaços ou traços.
-
-Alternativamente, você pode criar `WHATSAPP_SALDO_URL` com uma URL completa do WhatsApp; ela terá prioridade sobre `WHATSAPP_NUMBER`.
-
-O agente local V6 NÃO precisa ser alterado.
+Não há nova variável obrigatória no Railway para esta V9.

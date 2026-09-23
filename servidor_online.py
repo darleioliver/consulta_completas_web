@@ -100,6 +100,16 @@ UF_NOMES = {
 }
 
 
+def normalizar_telefone_cliente(valor):
+    """Normaliza o telefone do cliente para DDD+número, sem +55."""
+    digitos = re.sub(r"\D", "", str(valor or ""))
+    if digitos.startswith("55") and len(digitos) in (12, 13):
+        digitos = digitos[2:]
+    if len(digitos) not in (10, 11):
+        return ""
+    return digitos
+
+
 def conectar():
     return psycopg.connect(
         DATABASE_URL,
@@ -122,8 +132,15 @@ def init_db():
                             perfil VARCHAR(20) NOT NULL DEFAULT 'CLIENTE',
                             saldo BIGINT NOT NULL DEFAULT 0,
                             ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                            telefone VARCHAR(20),
                             criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
                         )
+                    """)
+                    cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefone VARCHAR(20)")
+                    cur.execute("""
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_telefone_cliente
+                        ON usuarios(telefone)
+                        WHERE perfil='CLIENTE' AND telefone IS NOT NULL
                     """)
                     cur.execute("""
                         CREATE TABLE IF NOT EXISTS movimentacoes (
@@ -146,6 +163,7 @@ def init_db():
                             progresso INTEGER NOT NULL DEFAULT 0,
                             mensagem TEXT,
                             filtros_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                            cliente_telefone VARCHAR(20),
                             resultado_json JSONB,
                             arquivo_chave TEXT,
                             saldo_descontado BOOLEAN NOT NULL DEFAULT FALSE,
@@ -159,6 +177,7 @@ def init_db():
                     cur.execute("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS progresso INTEGER NOT NULL DEFAULT 0")
                     cur.execute("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS mensagem TEXT")
                     cur.execute("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS erro TEXT")
+                    cur.execute("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS cliente_telefone VARCHAR(20)")
                     cur.execute("""
                         CREATE TABLE IF NOT EXISTS menu_opcoes (
                             tipo VARCHAR(40) NOT NULL,
@@ -391,12 +410,9 @@ BASE_STYLE = r"""
   padding:12px 14px;
   font-size:12px;
   font-weight:700;
-  line-height:1.5;
+  line-height:1.5
 }
-
-.precount-warning strong{
-  color:#8a6500;
-}
+.precount-warning strong{color:#8a6500}
 .btn-calc{
   display:inline-flex;align-items:center;justify-content:center;gap:7px;
   border:0;background:#2563eb;color:#fff;border-radius:11px;
@@ -516,7 +532,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 <div class='field w3'>
 <label>CEP(s)</label>
 <input class='compact-input' id='ceps' name='ceps' enterkeyhint='next' placeholder='45000000, 45020000'>
-<div class='helper'>Separe vários Ceps por vírgula..</div>
+<div class='helper'>Aplicado na exportação tanto na base Atualizados 2026 quanto na base detalhada.</div>
 </div>
 
 <div class='field w3'>
@@ -527,13 +543,13 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 
 <div class='field w3'>
 <label>DDD(s)</label>
-<input class='compact-input' id='ddds' name='ddds' enterkeyhint='next' placeholder='11, 12, 19'>
+<input class='compact-input' id='ddds' name='ddds' enterkeyhint='next' placeholder='77, 73, 75'>
 <div class='helper'>Separe vários DDDs por vírgula.</div>
 </div>
 
 <div class='field w3'>
 <label>Nome do arquivo</label>
-<input class='compact-input' id='nome_arquivo' name='nome_arquivo' maxlength='80' enterkeyhint='next' placeholder='Ex.: CLIENTES_SAO_PAULO'>
+<input class='compact-input' id='nome_arquivo' name='nome_arquivo' maxlength='80' enterkeyhint='next' placeholder='Ex.: CLIENTES_BAHIA'>
 <div class='filename-help'>Opcional. Data e hora serão acrescentadas automaticamente para evitar nomes repetidos.</div>
 </div>
 
@@ -562,7 +578,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
   </div>
 
   <div id='advanced-panel' class='advanced-panel'>
-    <div class='advanced-warning'>⚠️ Aplicar CBO, renda ou idade pode reduzir significativamente a quantidade de números ativos no Whatsapp.</div>
+    <div class='advanced-warning'>⚠️ Aplicar CBO, renda ou idade pode reduzir significativamente a quantidade de números ativos disponíveis na exportação.</div>
 
     <div class='fields'>
       <div class='field w6'>
@@ -596,7 +612,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 
 </div>
 
-<div class='precount-warning'><strong></strong> ⚠️Bairro, DDD e CEP são aplicados somente durante a exportação e <u>não entram na pré-contagem</u>. A quantidade calculada pode, portanto, ser maior que a quantidade realmente disponível após um desses três filtros.</div>
+<div class='precount-warning'><strong>⚠️ Importante:</strong> Bairro, DDD e CEP são aplicados somente durante a exportação e <u>não entram na pré-contagem</u>. A quantidade calculada pode, portanto, ser maior que a quantidade realmente disponível após esses três filtros.</div>
 <div class='notice' style='margin-top:12px'>A quantidade solicitada fica reservada enquanto o pedido estiver aguardando/processando. O saldo só é descontado quando a exportação termina com sucesso, usando a quantidade realmente entregue.</div>
 <div class='calc-row'>
   <div class='calc-actions'>
@@ -939,7 +955,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
         countState.className='count-state error';
         return;
       }
-      countState.textContent=data.status==='PROCESSANDO'?'Calculando...':'Cauculando';
+      countState.textContent=data.status==='PROCESSANDO'?'Calculando...':'Aguardando agente...';
       countState.className='count-state loading';
       countPollTimer=setTimeout(()=>consultarStatus(id,seq),900);
     }catch(e){
@@ -1087,8 +1103,8 @@ PEDIDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 </div></div></body></html>"""
 ADMIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Administração</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'><div class='top'><div class='brand'><div class='logo'>⚙️</div><div><h1>Administração</h1><p>Usuários, saldos e acessos.</p></div></div><div class='nav'><a class='btn2' href='{{url_for("painel")}}'>← Painel</a><a class='btn2' href='{{url_for("logout")}}'>Sair</a></div></div>
 {% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}
-<div class='grid'><div class='card w4'><h3>Criar usuário</h3><form method='post' action='{{url_for("admin_criar_usuario")}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><label>Usuário</label><input name='usuario' required><label style='margin-top:11px'>Senha</label><input type='password' name='senha' required><label style='margin-top:11px'>Saldo inicial</label><input type='number' name='saldo' value='0' min='0' required><button class='btn' type='submit' style='width:100%;margin-top:13px'>Criar usuário</button></form></div><div class='card w4 metric'><strong>{{total_clientes}}</strong><span>Clientes</span></div><div class='card w4 metric'><strong>{{"{:,}".format(total_saldo).replace(",", ".")}}</strong><span>Saldo total dos clientes</span></div>
-<div class='card w12'><h3>Usuários</h3><div class='table-wrap'><table><thead><tr><th>Usuário</th><th>Saldo</th><th>Reservado</th><th>Status</th><th>Ações</th></tr></thead><tbody>{% for u in usuarios %}<tr><td><b>{{u.usuario}}</b>{% if u.perfil=='ADMIN' %} <span class='muted'>ADMIN</span>{% endif %}</td><td>{{"{:,}".format(u.saldo).replace(",", ".")}}</td><td>{{"{:,}".format(u.reservado).replace(",", ".")}}</td><td><span class='pill {% if u.ativo %}ATIVO{% else %}BLOQUEADO{% endif %}'>{% if u.ativo %}ATIVO{% else %}BLOQUEADO{% endif %}</span></td><td>{% if u.perfil!='ADMIN' %}<div class='actions'><form method='post' action='{{url_for("admin_saldo",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input type='number' name='valor' placeholder='+/- saldo' required><button class='btn2'>Saldo</button></form><form method='post' action='{{url_for("admin_toggle",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><button class='{% if u.ativo %}danger{% else %}btn2{% endif %}'>{% if u.ativo %}Bloquear{% else %}Ativar{% endif %}</button></form><form method='post' action='{{url_for("admin_senha",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input type='password' name='senha' placeholder='Nova senha' required><button class='btn2'>Senha</button></form></div>{% else %}<span class='muted'>Conta administrativa</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div></div></div></div></body></html>"""
+<div class='grid'><div class='card w4'><h3>Criar usuário</h3><form method='post' action='{{url_for("admin_criar_usuario")}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><label>Usuário</label><input name='usuario' required><label style='margin-top:11px'>Telefone do cliente</label><input name='telefone' inputmode='numeric' placeholder='77998334733' required><div class='helper'>Obrigatório. Use DDD + número. Esse telefone identifica a pasta de contatos já enviados.</div><label style='margin-top:11px'>Senha</label><input type='password' name='senha' required><label style='margin-top:11px'>Saldo inicial</label><input type='number' name='saldo' value='0' min='0' required><button class='btn' type='submit' style='width:100%;margin-top:13px'>Criar usuário</button></form></div><div class='card w4 metric'><strong>{{total_clientes}}</strong><span>Clientes</span></div><div class='card w4 metric'><strong>{{"{:,}".format(total_saldo).replace(",", ".")}}</strong><span>Saldo total dos clientes</span></div>
+<div class='card w12'><h3>Usuários</h3><div class='table-wrap'><table><thead><tr><th>Usuário</th><th>Telefone</th><th>Saldo</th><th>Reservado</th><th>Status</th><th>Ações</th></tr></thead><tbody>{% for u in usuarios %}<tr><td><b>{{u.usuario}}</b>{% if u.perfil=='ADMIN' %} <span class='muted'>ADMIN</span>{% endif %}</td><td>{% if u.telefone %}<b>{{u.telefone}}</b>{% elif u.perfil!='ADMIN' %}<span class='pill BLOQUEADO'>SEM TELEFONE</span>{% else %}<span class='muted'>—</span>{% endif %}</td><td>{{"{:,}".format(u.saldo).replace(",", ".")}}</td><td>{{"{:,}".format(u.reservado).replace(",", ".")}}</td><td><span class='pill {% if u.ativo %}ATIVO{% else %}BLOQUEADO{% endif %}'>{% if u.ativo %}ATIVO{% else %}BLOQUEADO{% endif %}</span></td><td>{% if u.perfil!='ADMIN' %}<div class='actions'><form method='post' action='{{url_for("admin_telefone",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input name='telefone' inputmode='numeric' value='{{u.telefone or ""}}' placeholder='Telefone' required><button class='btn2'>Telefone</button></form><form method='post' action='{{url_for("admin_saldo",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input type='number' name='valor' placeholder='+/- saldo' required><button class='btn2'>Saldo</button></form><form method='post' action='{{url_for("admin_toggle",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><button class='{% if u.ativo %}danger{% else %}btn2{% endif %}'>{% if u.ativo %}Bloquear{% else %}Ativar{% endif %}</button></form><form method='post' action='{{url_for("admin_senha",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input type='password' name='senha' placeholder='Nova senha' required><button class='btn2'>Senha</button></form></div>{% else %}<span class='muted'>Conta administrativa</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div></div></div></div></body></html>"""
 
 
 @app.route("/health")
@@ -1378,6 +1394,10 @@ def criar_pedido():
     if not validar_csrf():
         return "CSRF inválido", 400
     u = usuario_atual()
+    telefone_cliente = normalizar_telefone_cliente(u.get("telefone"))
+    if u.get("perfil") != "ADMIN" and not telefone_cliente:
+        flash("Seu cadastro ainda não possui telefone. Solicite ao administrador antes de exportar.", "erro")
+        return redirect(url_for("painel"))
     try:
         quantidade = int(request.form.get("quantidade", "0") or 0)
     except ValueError:
@@ -1430,10 +1450,10 @@ def criar_pedido():
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO pedidos
-                    (usuario_id, quantidade, status, progresso, mensagem, filtros_json)
-                VALUES (%s,%s,'AGUARDANDO',0,'Aguardando o computador de processamento.',%s::jsonb)
+                    (usuario_id, quantidade, status, progresso, mensagem, filtros_json, cliente_telefone)
+                VALUES (%s,%s,'AGUARDANDO',0,'Aguardando o computador de processamento.',%s::jsonb,%s)
                 RETURNING id
-            """, (u["id"], quantidade, json.dumps(filtros, ensure_ascii=False)))
+            """, (u["id"], quantidade, json.dumps(filtros, ensure_ascii=False), telefone_cliente))
             pedido_id = cur.fetchone()["id"]
         conn.commit()
     return redirect(url_for("ver_pedido", pedido_id=pedido_id))
@@ -1463,24 +1483,52 @@ def admin_criar_usuario():
         return "CSRF inválido", 400
     nome = request.form.get("usuario", "").strip()
     senha = request.form.get("senha", "")
+    telefone = normalizar_telefone_cliente(request.form.get("telefone", ""))
     try:
         saldo = int(request.form.get("saldo", "0") or 0)
     except ValueError:
         saldo = -1
-    if not nome or len(senha) < 4 or saldo < 0:
-        flash("Confira usuário, senha e saldo inicial.", "erro")
+    if not nome or len(senha) < 4 or saldo < 0 or not telefone:
+        flash("Confira usuário, telefone, senha e saldo inicial. O telefone deve ter DDD + número.", "erro")
         return redirect(url_for("admin"))
     try:
         with conectar() as conn:
             with conn.cursor() as cur:
-                cur.execute("INSERT INTO usuarios(usuario,senha_hash,perfil,saldo,ativo) VALUES(%s,%s,'CLIENTE',%s,TRUE) RETURNING id", (nome, generate_password_hash(senha), saldo))
+                cur.execute("INSERT INTO usuarios(usuario,senha_hash,perfil,saldo,ativo,telefone) VALUES(%s,%s,'CLIENTE',%s,TRUE,%s) RETURNING id", (nome, generate_password_hash(senha), saldo, telefone))
                 uid = cur.fetchone()["id"]
                 if saldo:
                     cur.execute("INSERT INTO movimentacoes(usuario_id,valor,tipo,descricao) VALUES(%s,%s,'CREDITO_INICIAL','Saldo inicial')", (uid, saldo))
             conn.commit()
         flash("Usuário criado com sucesso.")
     except psycopg.errors.UniqueViolation:
-        flash("Já existe um usuário com esse nome.", "erro")
+        flash("Já existe um usuário ou cliente com esse telefone.", "erro")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/usuarios/<int:usuario_id>/telefone", methods=["POST"])
+@admin_required
+def admin_telefone(usuario_id):
+    if not validar_csrf():
+        return "CSRF inválido", 400
+    telefone = normalizar_telefone_cliente(request.form.get("telefone", ""))
+    if not telefone:
+        flash("Informe um telefone válido com DDD + número.", "erro")
+        return redirect(url_for("admin"))
+    try:
+        with conectar() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE usuarios SET telefone=%s WHERE id=%s AND perfil='CLIENTE'",
+                    (telefone, usuario_id),
+                )
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    flash("Cliente não encontrado.", "erro")
+                    return redirect(url_for("admin"))
+            conn.commit()
+        flash("Telefone do cliente atualizado.")
+    except psycopg.errors.UniqueViolation:
+        flash("Esse telefone já está vinculado a outro cliente.", "erro")
     return redirect(url_for("admin"))
 
 
@@ -1649,7 +1697,7 @@ def proximo_pedido():
         with conn.cursor() as cur:
             cur.execute("BEGIN")
             cur.execute("""
-                SELECT p.*, u.usuario
+                SELECT p.*, u.usuario, COALESCE(p.cliente_telefone, u.telefone) AS telefone_cliente
                 FROM pedidos p
                 JOIN usuarios u ON u.id=p.usuario_id
                 WHERE p.status='AGUARDANDO' AND u.ativo=TRUE
@@ -1661,13 +1709,68 @@ def proximo_pedido():
             if not p:
                 conn.commit()
                 return jsonify({"pedido": None})
-            cur.execute("UPDATE pedidos SET status='PROCESSANDO', iniciado_em=NOW(), progresso=1, mensagem='Pedido recebido .' WHERE id=%s", (p["id"],))
+            cur.execute("UPDATE pedidos SET status='PROCESSANDO', iniciado_em=NOW(), progresso=1, mensagem='Pedido recebido pelo computador.' WHERE id=%s", (p["id"],))
             conn.commit()
     filtros = p["filtros_json"] or {}
     if isinstance(filtros, str):
         filtros = json.loads(filtros)
-    return jsonify({"pedido": {"id": p["id"], "usuario": p["usuario"], "quantidade": p["quantidade"], "filtros": filtros}})
+    telefone_cliente = normalizar_telefone_cliente(p.get("telefone_cliente"))
+    return jsonify({"pedido": {
+        "id": p["id"],
+        "usuario": p["usuario"],
+        "telefone_cliente": telefone_cliente,
+        "quantidade": p["quantidade"],
+        "filtros": filtros,
+    }})
 
+
+@app.route("/api/pedidos/<int:pedido_id>/retomar", methods=["POST"])
+@api_required
+def retomar_pedido_agente(pedido_id):
+    """Permite ao mesmo agente retomar com segurança um pedido local interrompido."""
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            cur.execute("BEGIN")
+            cur.execute("""
+                SELECT p.*, u.usuario, COALESCE(p.cliente_telefone, u.telefone) AS telefone_cliente
+                FROM pedidos p
+                JOIN usuarios u ON u.id=p.usuario_id
+                WHERE p.id=%s
+                FOR UPDATE OF p
+            """, (pedido_id,))
+            p = cur.fetchone()
+            if not p:
+                conn.rollback()
+                return jsonify({"erro": "pedido_nao_encontrado"}), 404
+
+            if p["status"] == "CONCLUIDO":
+                conn.commit()
+                return jsonify({"status": "CONCLUIDO", "pedido": None})
+
+            if p["status"] not in ("AGUARDANDO", "PROCESSANDO"):
+                conn.commit()
+                return jsonify({"status": p["status"], "pedido": None})
+
+            if p["status"] == "AGUARDANDO":
+                cur.execute(
+                    "UPDATE pedidos SET status='PROCESSANDO', iniciado_em=COALESCE(iniciado_em,NOW()), progresso=GREATEST(progresso,1), mensagem='Pedido retomado pelo computador.' WHERE id=%s",
+                    (pedido_id,),
+                )
+            conn.commit()
+
+    filtros = p["filtros_json"] or {}
+    if isinstance(filtros, str):
+        filtros = json.loads(filtros)
+    return jsonify({
+        "status": "PROCESSANDO",
+        "pedido": {
+            "id": p["id"],
+            "usuario": p["usuario"],
+            "telefone_cliente": normalizar_telefone_cliente(p.get("telefone_cliente")),
+            "quantidade": p["quantidade"],
+            "filtros": filtros,
+        },
+    })
 
 
 @app.route("/api/pedidos/<int:pedido_id>/preparar-upload", methods=["POST"])
