@@ -1,21 +1,49 @@
-# Consultas Contatos Zap — Servidor V9
+# Consultas Contatos Zap — V10 Asaas
 
-Esta versão parte da V7 visual e adiciona integração com o histórico por cliente usado pelo Agente V9.
+Base: V9. O agente local V9 não muda.
 
 ## Novidades
-- campo **Telefone do cliente** obrigatório na criação de novos clientes;
-- telefone único por cliente;
-- clientes antigos sem telefone aparecem como **SEM TELEFONE** no Admin;
-- botão no Admin para cadastrar/alterar o telefone de clientes existentes;
-- cada novo pedido grava uma cópia do telefone do cliente no próprio pedido;
-- a API do agente envia `telefone_cliente` junto do pedido;
-- endpoint seguro de retomada para o Agente V9 finalizar pedidos interrompidos sem gerar outro conjunto de contatos;
-- visual e funcionalidades da V7 foram preservados;
-- alerta de pré-contagem mantido no amarelo discreto solicitado.
+- botão Adicionar saldo abre uma página interna;
+- criação de Link de Pagamento PIX no Asaas;
+- Webhook `POST /webhook/asaas`;
+- validação do header `asaas-access-token`;
+- idempotência por ID do evento e por ID do pagamento;
+- `PAYMENT_CONFIRMED` apenas atualiza o status;
+- saldo é creditado somente em `PAYMENT_RECEIVED`;
+- valor recebido deve coincidir com o pacote;
+- recargas entram no histórico de movimentações como `CREDITO_ASAAS`.
 
-## Depois do deploy
-Entre em **Administração** e preencha o telefone de todos os clientes antigos antes que eles façam novos pedidos.
+## Variáveis Railway
+Já configuradas:
+- `ASAAS_API_KEY`
+- `ASAAS_BASE_URL=https://api-sandbox.asaas.com/v3`
+- `ASAAS_ENVIRONMENT=sandbox`
 
-Formato recomendado: `77998334733` (DDD + número, sem +55). Se digitar +55, o servidor normaliza automaticamente.
+Adicionar agora:
+- `ASAAS_WEBHOOK_TOKEN` = exatamente o token de autenticação do Webhook no Asaas.
 
-Não há nova variável obrigatória no Railway para esta V9.
+Opcional:
+- `ASAAS_USER_AGENT`
+- `ASAAS_RECARGA_PACOTES_JSON`
+
+Pacotes padrão:
+- 5.000 = R$ 39,00
+- 10.000 = R$ 78,00
+- 25.000 = R$ 195,00
+- 50.000 = R$ 390,00
+
+Exemplo para personalizar:
+`[{"creditos":5000,"valor":39},{"creditos":15000,"valor":110}]`
+
+## Webhook Sandbox
+URL:
+`https://SEU-DOMINIO-RAILWAY/webhook/asaas`
+
+No Asaas:
+- ativo: sim
+- versão: v3
+- fila: ativa
+- tipo: Sequencial
+- eventos: `PAYMENT_CONFIRMED` e `PAYMENT_RECEIVED`
+
+O token do Asaas precisa ser idêntico ao `ASAAS_WEBHOOK_TOKEN` no Railway.

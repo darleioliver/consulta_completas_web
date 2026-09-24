@@ -4,10 +4,13 @@ import os
 import re
 import secrets
 import time
+from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 import psycopg
 import boto3
+import requests
 from flask import Flask, jsonify, redirect, render_template_string, request, session, url_for, flash
 from psycopg.rows import dict_row
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -18,6 +21,76 @@ SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin").strip()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
 AGENT_API_KEY = os.getenv("AGENT_API_KEY", "").strip()
+
+# Asaas — recarga automática de saldo.
+ASAAS_API_KEY = os.getenv("ASAAS_API_KEY", "").strip()
+ASAAS_BASE_URL = os.getenv("ASAAS_BASE_URL", "https://api-sandbox.asaas.com/v3").strip().rstrip("/")
+ASAAS_ENVIRONMENT = os.getenv("ASAAS_ENVIRONMENT", "sandbox").strip().lower()
+ASAAS_WEBHOOK_TOKEN = os.getenv("ASAAS_WEBHOOK_TOKEN", "").strip()
+ASAAS_USER_AGENT = os.getenv(
+    "ASAAS_USER_AGENT",
+    f"ContatosZap/10.0 (Python; {ASAAS_ENVIRONMENT or 'sandbox'})"
+).strip()
+
+PACOTES_RECARGA_PADRAO = [
+    {"creditos": 5000, "valor": Decimal("39.00")},
+    {"creditos": 10000, "valor": Decimal("78.00")},
+    {"creditos": 25000, "valor": Decimal("195.00")},
+    {"creditos": 50000, "valor": Decimal("390.00")},
+]
+
+def carregar_pacotes_recarga():
+    bruto = os.getenv("ASAAS_RECARGA_PACOTES_JSON", "").strip()
+    if not bruto:
+        return PACOTES_RECARGA_PADRAO
+    try:
+        dados = json.loads(bruto)
+        pacotes = []
+        for item in dados:
+            creditos = int(item["creditos"])
+            valor = Decimal(str(item["valor"])).quantize(Decimal("0.01"))
+            if creditos > 0 and valor > 0:
+                pacotes.append({"creditos": creditos, "valor": valor})
+        return pacotes or PACOTES_RECARGA_PADRAO
+    except Exception:
+        return PACOTES_RECARGA_PADRAO
+
+def asaas_api_configurada():
+    return bool(ASAAS_API_KEY and ASAAS_BASE_URL)
+
+def asaas_automatico_configurado():
+    return bool(asaas_api_configurada() and ASAAS_WEBHOOK_TOKEN)
+
+def asaas_headers():
+    return {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "User-Agent": ASAAS_USER_AGENT,
+        "access_token": ASAAS_API_KEY,
+    }
+
+def asaas_post(caminho, payload):
+    if not asaas_api_configurada():
+        raise RuntimeError("Integração Asaas não configurada.")
+    resposta = requests.post(
+        f"{ASAAS_BASE_URL}/{caminho.lstrip('/')}",
+        headers=asaas_headers(),
+        json=payload,
+        timeout=25,
+    )
+    try:
+        dados = resposta.json()
+    except Exception:
+        dados = {}
+    if not resposta.ok:
+        mensagem = "Falha na comunicação com o Asaas."
+        erros = dados.get("errors") if isinstance(dados, dict) else None
+        if isinstance(erros, list) and erros:
+            descricao = str(erros[0].get("description") or "").strip()
+            if descricao:
+                mensagem = descricao[:300]
+        raise RuntimeError(mensagem)
+    return dados
 
 # WhatsApp para recarga de saldo.
 # Você pode configurar apenas WHATSAPP_NUMBER (somente números, ex.: 5577999999999)
@@ -217,6 +290,54 @@ def init_db():
                     cur.execute("CREATE INDEX IF NOT EXISTS idx_pedidos_status ON pedidos(status)")
                     cur.execute("CREATE INDEX IF NOT EXISTS idx_pedidos_usuario ON pedidos(usuario_id)")
                     cur.execute("CREATE INDEX IF NOT EXISTS idx_menu_uf_cidade_uf ON menu_uf_cidade(uf)")
+
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS recargas_asaas (
+                            id BIGSERIAL PRIMARY KEY,
+                            usuario_id BIGINT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+                            creditos BIGINT NOT NULL,
+                            valor NUMERIC(12,2) NOT NULL,
+                            status VARCHAR(30) NOT NULL DEFAULT 'AGUARDANDO',
+                            asaas_link_id TEXT UNIQUE,
+                            asaas_link_url TEXT,
+                            ultimo_payment_id TEXT,
+                            erro TEXT,
+                            criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                    """)
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_recargas_asaas_usuario ON recargas_asaas(usuario_id, id DESC)")
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_recargas_asaas_link ON recargas_asaas(asaas_link_id)")
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS asaas_pagamentos (
+                            id BIGSERIAL PRIMARY KEY,
+                            recarga_id BIGINT REFERENCES recargas_asaas(id) ON DELETE SET NULL,
+                            usuario_id BIGINT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+                            asaas_payment_id TEXT UNIQUE NOT NULL,
+                            valor NUMERIC(12,2),
+                            creditos BIGINT NOT NULL,
+                            status VARCHAR(40),
+                            creditado BOOLEAN NOT NULL DEFAULT FALSE,
+                            criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            creditado_em TIMESTAMPTZ
+                        )
+                    """)
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_asaas_pagamentos_usuario ON asaas_pagamentos(usuario_id, id DESC)")
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS asaas_eventos (
+                            id BIGSERIAL PRIMARY KEY,
+                            asaas_event_id TEXT UNIQUE NOT NULL,
+                            evento VARCHAR(80) NOT NULL,
+                            asaas_payment_id TEXT,
+                            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                            processado BOOLEAN NOT NULL DEFAULT FALSE,
+                            observacao TEXT,
+                            criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            processado_em TIMESTAMPTZ
+                        )
+                    """)
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_asaas_eventos_payment ON asaas_eventos(asaas_payment_id)")
 
                     cur.execute("""
                         INSERT INTO usuarios (usuario, senha_hash, perfil, saldo, ativo)
@@ -470,13 +591,27 @@ BASE_STYLE = r"""
   .btn-saldo{width:100%}
   .smartmulti-menu{max-height:190px}
 }
+
+.saldo-packages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.saldo-package{border:1px solid #dce5ec;border-radius:15px;padding:16px;background:#fff}
+.saldo-package strong{display:block;font-size:24px;color:var(--primary)}
+.saldo-package .price{font-size:16px;font-weight:900;margin:7px 0;color:#172033}
+.saldo-package p{font-size:11px;color:var(--muted);line-height:1.45;min-height:32px}
+.saldo-package .btn{width:100%;margin-top:8px}
+.saldo-status{display:inline-flex;padding:5px 8px;border-radius:999px;font-size:10px;font-weight:850;background:#eef2f6;color:#475467}
+.saldo-status.RECEBIDO{background:#dcfce7;color:#166534}
+.saldo-status.CONFIRMADO{background:#e7f0ff;color:#1d4ed8}
+.saldo-status.ERRO{background:#fee2e2;color:#991b1b}
+.asaas-note{padding:12px 14px;border:1px solid #dbeafe;background:#eff6ff;color:#1e40af;border-radius:12px;font-size:11px;line-height:1.5}
+@media(max-width:900px){.saldo-packages{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.saldo-packages{grid-template-columns:1fr}}
 </style>
 """
 
 LOGIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Consultas Contatos Zap</title>""" + BASE_STYLE + """</head><body class='loginbody'><div class='login-card'><div class='logo' style='margin-bottom:20px'>📊</div><h1>Consultas Contatos Zap</h1><p>Acesse sua conta Contatos Zap para consultar e exportar contatos.</p>{% if erro %}<div class='flash erro'>{{erro}}</div>{% endif %}<form method='post'><label>Usuário</label><input name='usuario' autocomplete='username' autofocus required><label>Senha</label><input type='password' name='senha' autocomplete='current-password' required><button class='btn' type='submit'>Entrar</button></form></div></body></html>"""
 
 PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Consultas Contatos Zap</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'>
-<div class='top'><div class='brand'><div class='logo'>📊</div><div><h1>Consultas Contatos Zap</h1><p>Olá, {{usuario.usuario}}.</p><div class='brand-link'>contatoszap.com</div></div></div><div class='nav'>{% if whatsapp_saldo_url %}<a class='btn-saldo' href='{{whatsapp_saldo_url}}' target='_blank' rel='noopener'>💳 Adicionar saldo</a>{% endif %}{% if usuario.perfil=='ADMIN' %}<a class='btn2' href='{{url_for("admin")}}'>⚙️ Administração</a>{% endif %}<a class='btn2' href='{{url_for("logout")}}'>Sair</a></div></div>
+<div class='top'><div class='brand'><div class='logo'>📊</div><div><h1>Consultas Contatos Zap</h1><p>Olá, {{usuario.usuario}}.</p><div class='brand-link'>contatoszap.com</div></div></div><div class='nav'>{% if asaas_api_configurada %}<a class='btn-saldo' href='{{url_for("saldo")}}'>💳 Adicionar saldo</a>{% elif whatsapp_saldo_url %}<a class='btn-saldo' href='{{whatsapp_saldo_url}}' target='_blank' rel='noopener'>💳 Adicionar saldo</a>{% endif %}{% if usuario.perfil=='ADMIN' %}<a class='btn2' href='{{url_for("admin")}}'>⚙️ Administração</a>{% endif %}<a class='btn2' href='{{url_for("logout")}}'>Sair</a></div></div>
 {% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}
 <div class='grid'>
 <div class='card w3 metric'><strong>{{"{:,}".format(usuario.saldo).replace(",", ".")}}</strong><span>Saldo total</span></div>
@@ -1068,6 +1203,57 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
   });
 })();
 </script></body></html>"""
+SALDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Adicionar saldo</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'>
+<div class='top'>
+  <div class='brand'><div class='logo'>💳</div><div><h1>Adicionar saldo</h1><p>Recarga automática via Asaas.</p><div class='brand-link'>Contatos Zap</div></div></div>
+  <div class='nav'><a class='btn2' href='{{url_for("painel")}}'>← Voltar ao painel</a></div>
+</div>
+{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}
+<div class='grid'>
+  <div class='card w4 metric'><strong>{{"{:,}".format(usuario.saldo).replace(",", ".")}}</strong><span>Saldo atual</span></div>
+  <div class='card w4 metric'><strong>{{"{:,}".format(reservado).replace(",", ".")}}</strong><span>Reservado</span></div>
+  <div class='card w4 metric'><strong>{{"{:,}".format(disponivel).replace(",", ".")}}</strong><span>Disponível</span></div>
+  <div class='card w12'>
+    <div class='section-title'>Escolha uma recarga</div>
+    {% if not automatico %}<div class='flash erro'>A integração automática ainda não está completa. Falta configurar o token do Webhook do Asaas no Railway.</div>{% endif %}
+    <div class='asaas-note'>O pagamento é realizado na página segura do Asaas. O saldo é creditado automaticamente somente após o recebimento do evento <b>PAYMENT_RECEIVED</b>.</div>
+    <div class='saldo-packages' style='margin-top:14px'>
+      {% for p in pacotes %}
+      <div class='saldo-package'>
+        <strong>{{"{:,}".format(p.creditos).replace(",", ".")}}</strong>
+        <span class='muted' style='font-size:11px'>créditos</span>
+        <div class='price'>R$ {{p.valor_formatado}}</div>
+        <p>Pagamento via Pix no Asaas. Após o recebimento, os créditos entram automaticamente.</p>
+        <form method='post' action='{{url_for("criar_recarga_asaas")}}' target='_blank'>
+          <input type='hidden' name='csrf_token' value='{{csrf_token()}}'>
+          <input type='hidden' name='creditos' value='{{p.creditos}}'>
+          <button class='btn' type='submit' {% if not automatico %}disabled title='Webhook ainda não configurado'{% endif %}>Gerar pagamento Pix</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class='card w12'>
+    <div class='section-title'>Recargas recentes</div>
+    <div class='table-wrap'><table>
+      <thead><tr><th>Data</th><th>Créditos</th><th>Valor</th><th>Status</th><th>Pagamento</th></tr></thead>
+      <tbody>
+      {% for r in recargas %}
+        <tr>
+          <td>{{r.criado_em.strftime("%d/%m/%Y %H:%M") if r.criado_em else "—"}}</td>
+          <td>{{"{:,}".format(r.creditos).replace(",", ".")}}</td>
+          <td>R$ {{r.valor_formatado}}</td>
+          <td><span class='saldo-status {{r.status}}'>{{r.status}}</span></td>
+          <td>{% if r.asaas_link_url %}<a class='btn2' href='{{r.asaas_link_url}}' target='_blank' rel='noopener'>Abrir</a>{% else %}<span class='muted'>—</span>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan='5' class='muted'>Nenhuma recarga criada ainda.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</div></div></body></html>"""
+
 PEDIDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta http-equiv='refresh' content='5'><title>Pedido</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'><div class='top'><div class='brand'><div class='logo'>📦</div><div><h1>Pedido #{{p.id}}</h1><p>{% if p.status in ['AGUARDANDO','PROCESSANDO'] %}Atualização automática a cada 5 segundos.{% else %}Detalhes da exportação.{% endif %}</p></div></div><div class='nav'><a class='btn2' href='{{url_for("painel")}}'>← Voltar</a></div></div>
 <div class='grid'>
 <div class='card w3 metric'><strong>{{p.progresso}}%</strong><span>Progresso</span></div>
@@ -1109,7 +1295,7 @@ ADMIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><m
 
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "bucket": bucket_configurado()})
+    return jsonify({"ok": True, "bucket": bucket_configurado(), "asaas_api": asaas_api_configurada(), "asaas_webhook": bool(ASAAS_WEBHOOK_TOKEN)})
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -1160,6 +1346,7 @@ def painel():
         reservado=reservado,
         disponivel=disponivel,
         whatsapp_saldo_url=WHATSAPP_SALDO_URL,
+        asaas_api_configurada=asaas_api_configurada(),
         recentes=recentes,
         menu_pronto=menu_pronto,
         ufs=opcoes("uf"),
@@ -1314,6 +1501,277 @@ def status_contagem(consulta_id):
         "quantidade": int(c["quantidade"] or 0) if c["quantidade"] is not None else None,
         "erro": c["erro"],
     })
+
+
+
+def formatar_brl_decimal(valor):
+    d = Decimal(str(valor or 0)).quantize(Decimal("0.01"))
+    texto = f"{d:,.2f}"
+    return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+@app.route("/saldo")
+@login_required
+def saldo():
+    u = usuario_atual()
+    reservado = saldo_reservado(u["id"])
+    disponivel = max(0, int(u["saldo"]) - reservado)
+    pacotes = []
+    for item in carregar_pacotes_recarga():
+        pacotes.append({
+            "creditos": int(item["creditos"]),
+            "valor": item["valor"],
+            "valor_formatado": formatar_brl_decimal(item["valor"]),
+        })
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, creditos, valor, status, asaas_link_url, criado_em
+                FROM recargas_asaas
+                WHERE usuario_id=%s
+                ORDER BY id DESC
+                LIMIT 20
+            """, (u["id"],))
+            recargas = cur.fetchall()
+    for r in recargas:
+        r["valor_formatado"] = formatar_brl_decimal(r["valor"])
+    return render_template_string(
+        SALDO_HTML,
+        usuario=u,
+        reservado=reservado,
+        disponivel=disponivel,
+        pacotes=pacotes,
+        recargas=recargas,
+        automatico=asaas_automatico_configurado(),
+    )
+
+
+@app.route("/saldo/asaas/criar", methods=["POST"])
+@login_required
+def criar_recarga_asaas():
+    if not validar_csrf():
+        return "CSRF inválido", 400
+    if not asaas_automatico_configurado():
+        return "Integração automática do Asaas ainda não está configurada.", 503
+    u = usuario_atual()
+    try:
+        creditos_solicitados = int(request.form.get("creditos", "0") or 0)
+    except ValueError:
+        creditos_solicitados = 0
+    pacote = None
+    for item in carregar_pacotes_recarga():
+        if int(item["creditos"]) == creditos_solicitados:
+            pacote = item
+            break
+    if not pacote:
+        return "Pacote de recarga inválido.", 400
+    valor = Decimal(str(pacote["valor"])).quantize(Decimal("0.01"))
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO recargas_asaas (usuario_id, creditos, valor, status)
+                VALUES (%s,%s,%s,'CRIANDO')
+                RETURNING id
+            """, (u["id"], int(pacote["creditos"]), valor))
+            recarga_id = cur.fetchone()["id"]
+        conn.commit()
+    referencia = f"recarga:{recarga_id}:usuario:{u['id']}"
+    payload = {
+        "name": f"Contatos Zap - {int(pacote['creditos'])} créditos",
+        "description": f"Recarga de {int(pacote['creditos'])} créditos no sistema Contatos Zap.",
+        "value": float(valor),
+        "billingType": "PIX",
+        "chargeType": "DETACHED",
+        "externalReference": referencia,
+        "notificationEnabled": False,
+        "isAddressRequired": False,
+        "endDate": (date.today() + timedelta(days=2)).isoformat(),
+    }
+    try:
+        resposta = asaas_post("/paymentLinks", payload)
+        link_id = str(resposta.get("id") or "").strip()
+        link_url = str(resposta.get("url") or "").strip()
+        if not link_id or not link_url:
+            raise RuntimeError("O Asaas não retornou o link de pagamento.")
+    except Exception as exc:
+        with conectar() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE recargas_asaas
+                    SET status='ERRO', erro=%s, atualizado_em=NOW()
+                    WHERE id=%s
+                """, (str(exc)[:500], recarga_id))
+            conn.commit()
+        return f"Não foi possível criar a cobrança: {str(exc)}", 502
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE recargas_asaas
+                SET status='AGUARDANDO', asaas_link_id=%s, asaas_link_url=%s,
+                    atualizado_em=NOW()
+                WHERE id=%s
+            """, (link_id, link_url, recarga_id))
+        conn.commit()
+    return redirect(link_url)
+
+
+@app.route("/webhook/asaas", methods=["POST"])
+def webhook_asaas():
+    if not ASAAS_WEBHOOK_TOKEN:
+        return jsonify({"ok": False, "erro": "webhook_nao_configurado"}), 503
+    recebido = request.headers.get("asaas-access-token", "")
+    if not recebido or not secrets.compare_digest(recebido, ASAAS_WEBHOOK_TOKEN):
+        return jsonify({"ok": False, "erro": "token_invalido"}), 401
+    dados = request.get_json(silent=True)
+    if not isinstance(dados, dict):
+        return jsonify({"ok": False, "erro": "json_invalido"}), 400
+    event_id = str(dados.get("id") or "").strip()
+    evento = str(dados.get("event") or "").strip().upper()
+    payment = dados.get("payment") if isinstance(dados.get("payment"), dict) else {}
+    payment_id = str(payment.get("id") or "").strip()
+    payment_link_id = str(payment.get("paymentLink") or "").strip()
+    if not event_id or not evento:
+        return jsonify({"ok": False, "erro": "evento_invalido"}), 400
+    payload_json = json.dumps(dados, ensure_ascii=False, default=str)
+    try:
+        with conectar() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO asaas_eventos
+                        (asaas_event_id, evento, asaas_payment_id, payload_json, processado)
+                    VALUES (%s,%s,%s,%s::jsonb,FALSE)
+                    ON CONFLICT (asaas_event_id) DO NOTHING
+                    RETURNING id
+                """, (event_id, evento, payment_id or None, payload_json))
+                novo_evento = cur.fetchone()
+                if not novo_evento:
+                    conn.commit()
+                    return jsonify({"ok": True, "duplicado": True}), 200
+                if evento not in {"PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"}:
+                    cur.execute("""
+                        UPDATE asaas_eventos
+                        SET processado=TRUE, observacao='Evento ignorado', processado_em=NOW()
+                        WHERE asaas_event_id=%s
+                    """, (event_id,))
+                    conn.commit()
+                    return jsonify({"ok": True, "ignorado": True}), 200
+                if not payment_link_id:
+                    cur.execute("""
+                        UPDATE asaas_eventos
+                        SET processado=TRUE, observacao='Sem paymentLink; não pertence a uma recarga automática',
+                            processado_em=NOW()
+                        WHERE asaas_event_id=%s
+                    """, (event_id,))
+                    conn.commit()
+                    return jsonify({"ok": True, "ignorado": True}), 200
+                cur.execute("""
+                    SELECT * FROM recargas_asaas
+                    WHERE asaas_link_id=%s
+                    FOR UPDATE
+                """, (payment_link_id,))
+                recarga = cur.fetchone()
+                if not recarga:
+                    cur.execute("""
+                        UPDATE asaas_eventos
+                        SET processado=TRUE, observacao='Link não encontrado no Contatos Zap', processado_em=NOW()
+                        WHERE asaas_event_id=%s
+                    """, (event_id,))
+                    conn.commit()
+                    return jsonify({"ok": True, "ignorado": True}), 200
+                if not payment_id:
+                    cur.execute("""
+                        UPDATE asaas_eventos
+                        SET processado=TRUE, observacao='Pagamento sem ID', processado_em=NOW()
+                        WHERE asaas_event_id=%s
+                    """, (event_id,))
+                    conn.commit()
+                    return jsonify({"ok": True, "ignorado": True}), 200
+                try:
+                    valor_pago = Decimal(str(payment.get("value"))).quantize(Decimal("0.01"))
+                except (InvalidOperation, TypeError, ValueError):
+                    valor_pago = Decimal("-1")
+                valor_esperado = Decimal(str(recarga["valor"])).quantize(Decimal("0.01"))
+                cur.execute("""
+                    INSERT INTO asaas_pagamentos
+                        (recarga_id, usuario_id, asaas_payment_id, valor, creditos, status, creditado)
+                    VALUES (%s,%s,%s,%s,%s,%s,FALSE)
+                    ON CONFLICT (asaas_payment_id)
+                    DO UPDATE SET status=EXCLUDED.status, valor=EXCLUDED.valor, atualizado_em=NOW()
+                    RETURNING id, creditado
+                """, (
+                    recarga["id"], recarga["usuario_id"], payment_id,
+                    None if valor_pago < 0 else valor_pago,
+                    recarga["creditos"], evento,
+                ))
+                pagamento_local = cur.fetchone()
+                if evento == "PAYMENT_CONFIRMED":
+                    cur.execute("""
+                        UPDATE recargas_asaas
+                        SET status=CASE WHEN status='RECEBIDO' THEN status ELSE 'CONFIRMADO' END,
+                            ultimo_payment_id=%s, atualizado_em=NOW()
+                        WHERE id=%s
+                    """, (payment_id, recarga["id"]))
+                    cur.execute("""
+                        UPDATE asaas_eventos
+                        SET processado=TRUE, observacao='Pagamento confirmado; aguardando recebimento',
+                            processado_em=NOW()
+                        WHERE asaas_event_id=%s
+                    """, (event_id,))
+                    conn.commit()
+                    return jsonify({"ok": True, "status": "CONFIRMADO"}), 200
+                if valor_pago != valor_esperado:
+                    cur.execute("""
+                        UPDATE recargas_asaas
+                        SET status='ERRO', erro=%s, ultimo_payment_id=%s, atualizado_em=NOW()
+                        WHERE id=%s
+                    """, (
+                        f"Valor recebido divergente. Esperado {valor_esperado}; recebido {valor_pago}.",
+                        payment_id, recarga["id"]
+                    ))
+                    cur.execute("""
+                        UPDATE asaas_eventos
+                        SET processado=TRUE, observacao='Valor divergente; saldo não creditado',
+                            processado_em=NOW()
+                        WHERE asaas_event_id=%s
+                    """, (event_id,))
+                    conn.commit()
+                    return jsonify({"ok": True, "status": "VALOR_DIVERGENTE"}), 200
+                if not pagamento_local["creditado"]:
+                    cur.execute("SELECT saldo FROM usuarios WHERE id=%s FOR UPDATE", (recarga["usuario_id"],))
+                    usuario = cur.fetchone()
+                    if not usuario:
+                        raise RuntimeError("Usuário da recarga não encontrado.")
+                    cur.execute(
+                        "UPDATE usuarios SET saldo=saldo+%s WHERE id=%s",
+                        (int(recarga["creditos"]), recarga["usuario_id"])
+                    )
+                    cur.execute("""
+                        INSERT INTO movimentacoes (usuario_id, valor, tipo, descricao)
+                        VALUES (%s,%s,'CREDITO_ASAAS',%s)
+                    """, (
+                        recarga["usuario_id"], int(recarga["creditos"]),
+                        f"Recarga Asaas Pix · pagamento {payment_id}",
+                    ))
+                    cur.execute("""
+                        UPDATE asaas_pagamentos
+                        SET creditado=TRUE, status='PAYMENT_RECEIVED', atualizado_em=NOW(), creditado_em=NOW()
+                        WHERE asaas_payment_id=%s
+                    """, (payment_id,))
+                cur.execute("""
+                    UPDATE recargas_asaas
+                    SET status='RECEBIDO', ultimo_payment_id=%s, erro=NULL, atualizado_em=NOW()
+                    WHERE id=%s
+                """, (payment_id, recarga["id"]))
+                cur.execute("""
+                    UPDATE asaas_eventos
+                    SET processado=TRUE, observacao='Pagamento recebido e conciliado', processado_em=NOW()
+                    WHERE asaas_event_id=%s
+                """, (event_id,))
+            conn.commit()
+        return jsonify({"ok": True, "status": "RECEBIDO"}), 200
+    except Exception:
+        app.logger.exception("Falha ao processar webhook do Asaas")
+        return jsonify({"ok": False, "erro": "falha_interna"}), 500
 
 
 @app.route("/pedido/<int:pedido_id>")
