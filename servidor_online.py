@@ -1582,6 +1582,7 @@ def criar_recarga_asaas():
         "value": float(valor),
         "billingType": "PIX",
         "chargeType": "DETACHED",
+        "dueDateLimitDays": 2,
         "externalReference": referencia,
         "notificationEnabled": False,
         "isAddressRequired": False,
