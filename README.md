@@ -47,3 +47,12 @@ No Asaas:
 - eventos: `PAYMENT_CONFIRMED` e `PAYMENT_RECEIVED`
 
 O token do Asaas precisa ser idêntico ao `ASAAS_WEBHOOK_TOKEN` no Railway.
+
+
+## V11 — Planos e privacidade visual
+- novos pacotes Básico, Intermediário e Avançado;
+- botão Suporte via WhatsApp;
+- mensagens de progresso públicas não exibem nomes de arquivos, bases, pastas, estados lidos ou referências ao PC;
+- aviso duplicado de Bairro/DDD/CEP removido;
+- mantém o aviso dentro da pré-contagem;
+- inclui `dueDateLimitDays=2` no Link de Pagamento Asaas.

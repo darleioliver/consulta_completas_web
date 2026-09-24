@@ -33,10 +33,14 @@ ASAAS_USER_AGENT = os.getenv(
 ).strip()
 
 PACOTES_RECARGA_PADRAO = [
-    {"creditos": 5000, "valor": Decimal("39.00")},
-    {"creditos": 10000, "valor": Decimal("78.00")},
-    {"creditos": 25000, "valor": Decimal("195.00")},
-    {"creditos": 50000, "valor": Decimal("390.00")},
+    {"categoria": "Básico", "creditos": 5000, "valor": Decimal("29.90")},
+    {"categoria": "Básico", "creditos": 10000, "valor": Decimal("59.00")},
+    {"categoria": "Básico", "creditos": 50000, "valor": Decimal("189.00")},
+    {"categoria": "Intermediário", "creditos": 100000, "valor": Decimal("299.00")},
+    {"categoria": "Intermediário", "creditos": 300000, "valor": Decimal("459.00")},
+    {"categoria": "Intermediário", "creditos": 500000, "valor": Decimal("640.00")},
+    {"categoria": "Avançado", "creditos": 1000000, "valor": Decimal("890.00")},
+    {"categoria": "Avançado", "creditos": 3000000, "valor": Decimal("1999.00")},
 ]
 
 def carregar_pacotes_recarga():
@@ -50,7 +54,7 @@ def carregar_pacotes_recarga():
             creditos = int(item["creditos"])
             valor = Decimal(str(item["valor"])).quantize(Decimal("0.01"))
             if creditos > 0 and valor > 0:
-                pacotes.append({"creditos": creditos, "valor": valor})
+                pacotes.append({"categoria": str(item.get("categoria") or "Planos"), "creditos": creditos, "valor": valor})
         return pacotes or PACOTES_RECARGA_PADRAO
     except Exception:
         return PACOTES_RECARGA_PADRAO
@@ -103,11 +107,41 @@ if not WHATSAPP_SALDO_URL and WHATSAPP_NUMBER:
         "?text=Ol%C3%A1%2C%20quero%20adicionar%20saldo%20na%20minha%20conta%20Contatos%20Zap."
     )
 
+SUPPORT_WHATSAPP_URL = os.getenv("SUPPORT_WHATSAPP_URL", "").strip()
+if not SUPPORT_WHATSAPP_URL and WHATSAPP_NUMBER:
+    SUPPORT_WHATSAPP_URL = (
+        f"https://wa.me/{WHATSAPP_NUMBER}"
+        "?text=Ol%C3%A1%2C%20preciso%20de%20suporte%20no%20Contatos%20Zap."
+    )
+
 AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL", "").strip()
 AWS_S3_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME", "").strip()
 AWS_DEFAULT_REGION = os.getenv("AWS_DEFAULT_REGION", "auto").strip() or "auto"
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
+
+def mensagem_publica_pedido(progresso, status=None):
+    status = str(status or "").upper()
+    try:
+        p = int(progresso or 0)
+    except Exception:
+        p = 0
+    if status == "CONCLUIDO" or p >= 100:
+        return "Pedido concluído. Arquivo pronto para download."
+    if status == "ERRO":
+        return "Não foi possível concluir o processamento."
+    if p <= 1:
+        return "Preparando seu pedido..."
+    if p < 25:
+        return "Localizando os contatos disponíveis..."
+    if p < 55:
+        return "Aplicando os filtros selecionados..."
+    if p < 85:
+        return "Organizando os resultados..."
+    if p < 98:
+        return "Gerando seu arquivo..."
+    return "Finalizando seu pedido..."
+
 
 def bucket_configurado():
     return all([
@@ -138,6 +172,7 @@ if not ADMIN_PASSWORD:
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+app.jinja_env.globals["mensagem_publica_pedido"] = mensagem_publica_pedido
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SECURE=True,
@@ -598,6 +633,7 @@ BASE_STYLE = r"""
 .saldo-package .price{font-size:16px;font-weight:900;margin:7px 0;color:#172033}
 .saldo-package p{font-size:11px;color:var(--muted);line-height:1.45;min-height:32px}
 .saldo-package .btn{width:100%;margin-top:8px}
+.plan-group-title{font-size:18px;font-weight:900;margin:20px 0 10px;color:#172033}.plan-group-title:first-child{margin-top:4px}
 .saldo-status{display:inline-flex;padding:5px 8px;border-radius:999px;font-size:10px;font-weight:850;background:#eef2f6;color:#475467}
 .saldo-status.RECEBIDO{background:#dcfce7;color:#166534}
 .saldo-status.CONFIRMADO{background:#e7f0ff;color:#1d4ed8}
@@ -611,7 +647,7 @@ BASE_STYLE = r"""
 LOGIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Consultas Contatos Zap</title>""" + BASE_STYLE + """</head><body class='loginbody'><div class='login-card'><div class='logo' style='margin-bottom:20px'>📊</div><h1>Consultas Contatos Zap</h1><p>Acesse sua conta Contatos Zap para consultar e exportar contatos.</p>{% if erro %}<div class='flash erro'>{{erro}}</div>{% endif %}<form method='post'><label>Usuário</label><input name='usuario' autocomplete='username' autofocus required><label>Senha</label><input type='password' name='senha' autocomplete='current-password' required><button class='btn' type='submit'>Entrar</button></form></div></body></html>"""
 
 PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Consultas Contatos Zap</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'>
-<div class='top'><div class='brand'><div class='logo'>📊</div><div><h1>Consultas Contatos Zap</h1><p>Olá, {{usuario.usuario}}.</p><div class='brand-link'>contatoszap.com</div></div></div><div class='nav'>{% if asaas_api_configurada %}<a class='btn-saldo' href='{{url_for("saldo")}}'>💳 Adicionar saldo</a>{% elif whatsapp_saldo_url %}<a class='btn-saldo' href='{{whatsapp_saldo_url}}' target='_blank' rel='noopener'>💳 Adicionar saldo</a>{% endif %}{% if usuario.perfil=='ADMIN' %}<a class='btn2' href='{{url_for("admin")}}'>⚙️ Administração</a>{% endif %}<a class='btn2' href='{{url_for("logout")}}'>Sair</a></div></div>
+<div class='top'><div class='brand'><div class='logo'>📊</div><div><h1>Consultas Contatos Zap</h1><p>Olá, {{usuario.usuario}}.</p><div class='brand-link'>contatoszap.com</div></div></div><div class='nav'>{% if asaas_api_configurada %}<a class='btn-saldo' href='{{url_for("saldo")}}'>💳 Adicionar saldo</a>{% elif whatsapp_saldo_url %}<a class='btn-saldo' href='{{whatsapp_saldo_url}}' target='_blank' rel='noopener'>💳 Adicionar saldo</a>{% endif %}{% if support_whatsapp_url %}<a class='btn2' href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>💬 Suporte</a>{% endif %}{% if usuario.perfil=='ADMIN' %}<a class='btn2' href='{{url_for("admin")}}'>⚙️ Administração</a>{% endif %}<a class='btn2' href='{{url_for("logout")}}'>Sair</a></div></div>
 {% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}
 <div class='grid'>
 <div class='card w3 metric'><strong>{{"{:,}".format(usuario.saldo).replace(",", ".")}}</strong><span>Saldo total</span></div>
@@ -624,7 +660,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
   <div class='copy'><div class='section-title' style='margin-bottom:0'>🔎 Nova exportação</div><p>Pesquise e selecione um ou vários estados, cidades e CBOs. Bairro, CEP e DDD podem ser informados separados por vírgula.</p></div>
   <div class='filter-badge'>✓ Filtros combináveis</div>
 </div>
-{% if not menu_pronto %}<div class='flash erro'>O agente do seu PC ainda não sincronizou os menus. Inicie o agente local primeiro.</div>{% endif %}
+{% if not menu_pronto %}<div class='flash erro'>Os filtros ainda estão sendo sincronizados. Tente novamente em instantes.</div>{% endif %}
 
 <div id='count-panel' class='count-panel' aria-live='polite'>
   <div class='count-copy'>
@@ -667,7 +703,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 <div class='field w3'>
 <label>CEP(s)</label>
 <input class='compact-input' id='ceps' name='ceps' enterkeyhint='next' placeholder='45000000, 45020000'>
-<div class='helper'>Aplicado na exportação tanto na base Atualizados 2026 quanto na base detalhada.</div>
+<div class='helper'>Aplicado durante a exportação dos contatos.</div>
 </div>
 
 <div class='field w3'>
@@ -747,7 +783,6 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 
 </div>
 
-<div class='precount-warning'><strong>⚠️ Importante:</strong> Bairro, DDD e CEP são aplicados somente durante a exportação e <u>não entram na pré-contagem</u>. A quantidade calculada pode, portanto, ser maior que a quantidade realmente disponível após esses três filtros.</div>
 <div class='notice' style='margin-top:12px'>A quantidade solicitada fica reservada enquanto o pedido estiver aguardando/processando. O saldo só é descontado quando a exportação termina com sucesso, usando a quantidade realmente entregue.</div>
 <div class='calc-row'>
   <div class='calc-actions'>
@@ -760,7 +795,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 </form>
 </div>
 
-<div class='card w12'><div class='section-title'>📋 Últimos pedidos</div><div class='table-wrap'>{% if recentes %}<table><thead><tr><th>Pedido</th><th>Quantidade</th><th>Status</th><th>Progresso</th><th>Mensagem</th><th>Criado</th><th>Ações</th></tr></thead><tbody>{% for p in recentes %}<tr><td><a href='{{url_for("ver_pedido",pedido_id=p.id)}}'><b>#{{p.id}}</b></a></td><td>{{"{:,}".format(p.quantidade).replace(",", ".")}}</td><td><span class='pill {{p.status}}'>{{p.status}}</span></td><td><div class='progress'><span style='width:{{p.progresso}}%'></span></div><small>{{p.progresso}}%</small></td><td>{{p.mensagem or ''}}</td><td>{{p.criado_em}}</td><td><div class='history-actions'><a class='btn-mini' href='{{url_for("ver_pedido",pedido_id=p.id)}}'>Abrir</a>{% if p.status=='CONCLUIDO' and p.arquivo_chave %}<a class='btn-mini download' href='{{url_for("baixar_pedido",pedido_id=p.id)}}'>📥 Baixar</a>{% endif %}</div></td></tr>{% endfor %}</tbody></table>{% else %}<p class='muted'>Nenhum pedido criado ainda.</p>{% endif %}</div></div>
+<div class='card w12'><div class='section-title'>📋 Últimos pedidos</div><div class='table-wrap'>{% if recentes %}<table><thead><tr><th>Pedido</th><th>Quantidade</th><th>Status</th><th>Progresso</th><th>Mensagem</th><th>Criado</th><th>Ações</th></tr></thead><tbody>{% for p in recentes %}<tr><td><a href='{{url_for("ver_pedido",pedido_id=p.id)}}'><b>#{{p.id}}</b></a></td><td>{{"{:,}".format(p.quantidade).replace(",", ".")}}</td><td><span class='pill {{p.status}}'>{{p.status}}</span></td><td><div class='progress'><span style='width:{{p.progresso}}%'></span></div><small>{{p.progresso}}%</small></td><td>{{mensagem_publica_pedido(p.progresso,p.status)}}</td><td>{{p.criado_em}}</td><td><div class='history-actions'><a class='btn-mini' href='{{url_for("ver_pedido",pedido_id=p.id)}}'>Abrir</a>{% if p.status=='CONCLUIDO' and p.arquivo_chave %}<a class='btn-mini download' href='{{url_for("baixar_pedido",pedido_id=p.id)}}'>📥 Baixar</a>{% endif %}</div></td></tr>{% endfor %}</tbody></table>{% else %}<p class='muted'>Nenhum pedido criado ainda.</p>{% endif %}</div></div>
 </div></div>
 
 <script>
@@ -1206,7 +1241,7 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 SALDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Adicionar saldo</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'>
 <div class='top'>
   <div class='brand'><div class='logo'>💳</div><div><h1>Adicionar saldo</h1><p>Recarga automática via Asaas.</p><div class='brand-link'>Contatos Zap</div></div></div>
-  <div class='nav'><a class='btn2' href='{{url_for("painel")}}'>← Voltar ao painel</a></div>
+  <div class='nav'>{% if support_whatsapp_url %}<a class='btn2' href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>💬 Suporte</a>{% endif %}<a class='btn2' href='{{url_for("painel")}}'>← Voltar ao painel</a></div>
 </div>
 {% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}
 <div class='grid'>
@@ -1217,19 +1252,24 @@ SALDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><m
     <div class='section-title'>Escolha uma recarga</div>
     {% if not automatico %}<div class='flash erro'>A integração automática ainda não está completa. Falta configurar o token do Webhook do Asaas no Railway.</div>{% endif %}
     <div class='asaas-note'>O pagamento é realizado na página segura do Asaas. O saldo é creditado automaticamente somente após o recebimento do evento <b>PAYMENT_RECEIVED</b>.</div>
-    <div class='saldo-packages' style='margin-top:14px'>
-      {% for p in pacotes %}
-      <div class='saldo-package'>
-        <strong>{{"{:,}".format(p.creditos).replace(",", ".")}}</strong>
-        <span class='muted' style='font-size:11px'>créditos</span>
-        <div class='price'>R$ {{p.valor_formatado}}</div>
-        <p>Pagamento via Pix no Asaas. Após o recebimento, os créditos entram automaticamente.</p>
-        <form method='post' action='{{url_for("criar_recarga_asaas")}}' target='_blank'>
-          <input type='hidden' name='csrf_token' value='{{csrf_token()}}'>
-          <input type='hidden' name='creditos' value='{{p.creditos}}'>
-          <button class='btn' type='submit' {% if not automatico %}disabled title='Webhook ainda não configurado'{% endif %}>Gerar pagamento Pix</button>
-        </form>
-      </div>
+    <div style='margin-top:14px'>
+      {% for grupo in pacotes|groupby('categoria') %}
+        <div class='plan-group-title'>{{grupo.grouper}}</div>
+        <div class='saldo-packages'>
+        {% for p in grupo.list %}
+          <div class='saldo-package'>
+            <strong>{{"{:,}".format(p.creditos).replace(",", ".")}}</strong>
+            <span class='muted' style='font-size:11px'>créditos</span>
+            <div class='price'>R$ {{p.valor_formatado}}</div>
+            <p>Pagamento via Pix no Asaas. Após o recebimento, os créditos entram automaticamente.</p>
+            <form method='post' action='{{url_for("criar_recarga_asaas")}}' target='_blank'>
+              <input type='hidden' name='csrf_token' value='{{csrf_token()}}'>
+              <input type='hidden' name='creditos' value='{{p.creditos}}'>
+              <button class='btn' type='submit' {% if not automatico %}disabled title='Webhook ainda não configurado'{% endif %}>Gerar pagamento Pix</button>
+            </form>
+          </div>
+        {% endfor %}
+        </div>
       {% endfor %}
     </div>
   </div>
@@ -1262,7 +1302,7 @@ PEDIDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 <div class='card w3 metric'><strong>{{"{:,}".format(entregues).replace(",", ".")}}</strong><span>Entregues</span></div>
 
 <div class='card w12'>
-<h3 style='margin-top:0'>{{p.mensagem or 'Aguardando...'}}</h3>
+<h3 style='margin-top:0'>{{mensagem_publica_pedido(p.progresso,p.status)}}</h3>
 <div class='progress' style='height:12px'><span style='width:{{p.progresso}}%'></span></div>
 
 {% if p.erro %}
@@ -1346,6 +1386,7 @@ def painel():
         reservado=reservado,
         disponivel=disponivel,
         whatsapp_saldo_url=WHATSAPP_SALDO_URL,
+        support_whatsapp_url=SUPPORT_WHATSAPP_URL,
         asaas_api_configurada=asaas_api_configurada(),
         recentes=recentes,
         menu_pronto=menu_pronto,
@@ -1519,6 +1560,7 @@ def saldo():
     pacotes = []
     for item in carregar_pacotes_recarga():
         pacotes.append({
+            "categoria": str(item.get("categoria") or "Planos"),
             "creditos": int(item["creditos"]),
             "valor": item["valor"],
             "valor_formatado": formatar_brl_decimal(item["valor"]),
@@ -1543,6 +1585,7 @@ def saldo():
         pacotes=pacotes,
         recargas=recargas,
         automatico=asaas_automatico_configurado(),
+        support_whatsapp_url=SUPPORT_WHATSAPP_URL,
     )
 
 
@@ -2168,7 +2211,7 @@ def proximo_pedido():
             if not p:
                 conn.commit()
                 return jsonify({"pedido": None})
-            cur.execute("UPDATE pedidos SET status='PROCESSANDO', iniciado_em=NOW(), progresso=1, mensagem='Pedido recebido pelo computador.' WHERE id=%s", (p["id"],))
+            cur.execute("UPDATE pedidos SET status='PROCESSANDO', iniciado_em=NOW(), progresso=1, mensagem='Preparando seu pedido...' WHERE id=%s", (p["id"],))
             conn.commit()
     filtros = p["filtros_json"] or {}
     if isinstance(filtros, str):
@@ -2212,7 +2255,7 @@ def retomar_pedido_agente(pedido_id):
 
             if p["status"] == "AGUARDANDO":
                 cur.execute(
-                    "UPDATE pedidos SET status='PROCESSANDO', iniciado_em=COALESCE(iniciado_em,NOW()), progresso=GREATEST(progresso,1), mensagem='Pedido retomado pelo computador.' WHERE id=%s",
+                    "UPDATE pedidos SET status='PROCESSANDO', iniciado_em=COALESCE(iniciado_em,NOW()), progresso=GREATEST(progresso,1), mensagem='Retomando o processamento...' WHERE id=%s",
                     (pedido_id,),
                 )
             conn.commit()
@@ -2298,7 +2341,8 @@ def preparar_upload(pedido_id):
 def progresso_pedido(pedido_id):
     dados = request.get_json(force=True) or {}
     progresso = max(1, min(99, int(dados.get("progresso", 1))))
-    mensagem = str(dados.get("mensagem", ""))[:1000]
+    # A mensagem técnica enviada pelo agente não é exposta nem persistida no painel.
+    mensagem = mensagem_publica_pedido(progresso, "PROCESSANDO")
     with conectar() as conn:
         with conn.cursor() as cur:
             cur.execute("UPDATE pedidos SET progresso=%s,mensagem=%s WHERE id=%s AND status='PROCESSANDO'", (progresso, mensagem, pedido_id))
