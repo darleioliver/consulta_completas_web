@@ -1251,7 +1251,7 @@ SALDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><m
   <div class='card w12'>
     <div class='section-title'>Escolha uma recarga</div>
     {% if not automatico %}<div class='flash erro'>A integração automática ainda não está completa. Falta configurar o token do Webhook do Asaas no Railway.</div>{% endif %}
-    <div class='asaas-note'>O pagamento é realizado na página segura do Asaas. O saldo é creditado automaticamente somente após o recebimento do evento <b>PAYMENT_RECEIVED</b>.</div>
+    <div class='asaas-note'>Pagamento seguro via Asaas. Após a confirmação, seu saldo é atualizado automaticamente..</div>
     <div style='margin-top:14px'>
       {% for grupo in pacotes|groupby('categoria') %}
         <div class='plan-group-title'>{{grupo.grouper}}</div>
