@@ -114,6 +114,14 @@ if not SUPPORT_WHATSAPP_URL and WHATSAPP_NUMBER:
         "?text=Ol%C3%A1%2C%20preciso%20de%20suporte%20no%20Contatos%20Zap."
     )
 
+# Identidade pública da plataforma. Todos podem ser sobrescritos no Railway.
+SALES_SITE_URL = os.getenv("SALES_SITE_URL", "https://contatozap.com").strip()
+TERMS_URL = os.getenv("TERMS_URL", "https://contatozap.com/termos_de_uso.html").strip()
+PRIVACY_URL = os.getenv("PRIVACY_URL", "https://contatozap.com/privacy.html").strip()
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "suporte@contatoszap.com").strip()
+COMPANY_CNPJ = os.getenv("COMPANY_CNPJ", "49.710.958/0001-65").strip()
+COPYRIGHT_YEAR = os.getenv("COPYRIGHT_YEAR", "2026").strip() or "2026"
+
 AWS_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL", "").strip()
 AWS_S3_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME", "").strip()
 AWS_DEFAULT_REGION = os.getenv("AWS_DEFAULT_REGION", "auto").strip() or "auto"
@@ -172,11 +180,21 @@ if not ADMIN_PASSWORD:
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
-app.jinja_env.globals["mensagem_publica_pedido"] = mensagem_publica_pedido
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_SAMESITE="Lax",
+)
+
+app.jinja_env.globals.update(
+    mensagem_publica_pedido=mensagem_publica_pedido,
+    sales_site_url=SALES_SITE_URL,
+    terms_url=TERMS_URL,
+    privacy_url=PRIVACY_URL,
+    support_email=SUPPORT_EMAIL,
+    company_cnpj=COMPANY_CNPJ,
+    copyright_year=COPYRIGHT_YEAR,
+    support_whatsapp_url=SUPPORT_WHATSAPP_URL,
 )
 
 FAIXAS_RENDA_DESCRICAO = {
@@ -218,6 +236,20 @@ def normalizar_telefone_cliente(valor):
     return digitos
 
 
+def normalizar_email(valor):
+    return str(valor or "").strip().lower()[:254]
+
+
+def email_valido(valor):
+    email = normalizar_email(valor)
+    return bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email))
+
+
+def usuario_publico_valido(valor):
+    nome = str(valor or "").strip()
+    return bool(re.fullmatch(r"[A-Za-z0-9._-]{3,40}", nome))
+
+
 def conectar():
     return psycopg.connect(
         DATABASE_URL,
@@ -241,10 +273,21 @@ def init_db():
                             saldo BIGINT NOT NULL DEFAULT 0,
                             ativo BOOLEAN NOT NULL DEFAULT TRUE,
                             telefone VARCHAR(20),
+                            email VARCHAR(254),
+                            termos_aceitos_em TIMESTAMPTZ,
+                            privacidade_aceita_em TIMESTAMPTZ,
                             criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
                         )
                     """)
                     cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefone VARCHAR(20)")
+                    cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email VARCHAR(254)")
+                    cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS termos_aceitos_em TIMESTAMPTZ")
+                    cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS privacidade_aceita_em TIMESTAMPTZ")
+                    cur.execute("""
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_email_cliente
+                        ON usuarios(LOWER(email))
+                        WHERE perfil='CLIENTE' AND email IS NOT NULL
+                    """)
                     cur.execute("""
                         CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_telefone_cliente
                         ON usuarios(telefone)
@@ -403,6 +446,7 @@ def csrf_token():
 
 
 app.jinja_env.globals["csrf_token"] = csrf_token
+app.jinja_env.globals["asaas_api_configurada"] = asaas_api_configurada
 
 
 def validar_csrf():
@@ -641,13 +685,26 @@ BASE_STYLE = r"""
 .asaas-note{padding:12px 14px;border:1px solid #dbeafe;background:#eff6ff;color:#1e40af;border-radius:12px;font-size:11px;line-height:1.5}
 @media(max-width:900px){.saldo-packages{grid-template-columns:1fr 1fr}}
 @media(max-width:520px){.saldo-packages{grid-template-columns:1fr}}
+
+/* V12 — identidade, cadastro e navegação profissional */
+.app-header{position:sticky;top:0;z-index:80;background:rgba(255,255,255,.96);backdrop-filter:blur(14px);border-bottom:1px solid #e8edf3;box-shadow:0 5px 24px rgba(15,23,42,.04)}
+.app-header-inner{max-width:1360px;margin:auto;padding:11px 22px;display:flex;align-items:center;justify-content:space-between;gap:18px}
+.app-brand{display:flex;align-items:center;gap:10px;min-width:max-content}.app-brand img{width:42px;height:42px;object-fit:contain}.app-brand strong{display:block;font-size:15px;letter-spacing:-.01em}.app-brand small{display:block;color:#7b8798;font-size:10px;margin-top:1px}
+.app-nav{display:flex;gap:4px;align-items:center;justify-content:flex-end;flex-wrap:wrap}.app-nav a{padding:9px 10px;border-radius:10px;font-size:11.5px;font-weight:780;color:#475467}.app-nav a:hover{background:#f2f7f7;color:#0f766e}.app-nav .nav-primary{background:#e9f8f5;color:#0f766e}.app-nav .nav-exit{color:#8a3d35}
+.page-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:7px 0 18px}.page-heading h1{font-size:23px;margin:0;letter-spacing:-.02em}.page-heading p{margin:5px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
+.site-footer{margin-top:34px;border-top:1px solid #e5eaf1;background:#fff}.site-footer-inner{max-width:1360px;margin:auto;padding:22px;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}.site-footer strong{font-size:12px}.site-footer p{margin:4px 0 0;font-size:10.5px;color:#778395}.site-footer-links{display:flex;gap:12px;flex-wrap:wrap}.site-footer-links a{font-size:11px;font-weight:750;color:#566274}.site-footer-links a:hover{color:#0f766e}
+.loginbody{min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(circle at 8% 0,rgba(20,184,166,.19),transparent 31%),linear-gradient(145deg,#08111f,#101b2d)}.auth-shell{flex:1;width:100%;display:grid;place-items:center;padding:38px 14px}.login-card{width:min(460px,calc(100% - 4px));background:#fff;border-radius:25px;padding:32px;box-shadow:0 26px 85px rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.55)}.auth-brand{text-align:center;margin-bottom:23px}.auth-brand img{width:180px;max-width:70%;height:auto;object-fit:contain}.auth-brand h1{font-size:24px;margin:10px 0 7px}.auth-brand p{margin:0 auto;color:var(--muted);font-size:12.5px;line-height:1.5;max-width:330px}.auth-actions{display:grid;gap:8px;margin-top:9px}.auth-secondary{display:flex;align-items:center;justify-content:center;height:42px;border-radius:11px;border:1px solid #dce4eb;font-size:12.5px;font-weight:800;color:#344054;background:#fff}.auth-links{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:18px}.auth-links a{font-size:10.5px;font-weight:750;color:#667085}.auth-note{padding:11px 12px;border-radius:11px;background:#f5fbfa;border:1px solid #d8f0ec;color:#355f5a;font-size:10.5px;line-height:1.5;margin:10px 0 14px}.terms-check{display:flex;align-items:flex-start;gap:8px;margin:12px 0}.terms-check input{width:auto;height:auto;margin-top:3px}.terms-check label{font-size:10.5px;font-weight:600;line-height:1.5;margin:0;color:#586474}.terms-check a{color:#0f766e;font-weight:800}.readonly-box{background:#f7f9fb;border:1px solid #e1e7ee;border-radius:11px;padding:11px 12px;font-size:13px;color:#344054}.security-badge{display:inline-flex;align-items:center;gap:6px;border:1px solid #d7efe9;background:#effaf7;color:#0b6a61;border-radius:999px;padding:6px 9px;font-size:10px;font-weight:850}
+@media(max-width:900px){.app-header-inner{padding:9px 13px;align-items:flex-start;flex-direction:column}.app-nav{width:100%;justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.app-nav a{white-space:nowrap}.site-footer-inner{padding:18px 13px}.page-heading{flex-direction:column}.auth-shell{padding:24px 12px}}
+
 </style>
 """
 
-LOGIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Consultas Contatos Zap</title>""" + BASE_STYLE + """</head><body class='loginbody'><div class='login-card'><div class='logo' style='margin-bottom:20px'>📊</div><h1>Consultas Contatos Zap</h1><p>Acesse sua conta Contatos Zap para consultar e exportar contatos.</p>{% if erro %}<div class='flash erro'>{{erro}}</div>{% endif %}<form method='post'><label>Usuário</label><input name='usuario' autocomplete='username' autofocus required><label>Senha</label><input type='password' name='senha' autocomplete='current-password' required><button class='btn' type='submit'>Entrar</button></form></div></body></html>"""
+SITE_FOOTER_HTML = r"""<footer class='site-footer'><div class='site-footer-inner'><div><strong>© {{copyright_year}} Contatos Zap</strong><p>CNPJ {{company_cnpj}} · {{support_email}}</p></div><div class='site-footer-links'><a href='{{sales_site_url}}' target='_blank' rel='noopener'>Site oficial</a><a href='{{terms_url}}' target='_blank' rel='noopener'>Termos de Uso</a><a href='{{privacy_url}}' target='_blank' rel='noopener'>Política de Privacidade</a>{% if support_whatsapp_url %}<a href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>Suporte</a>{% endif %}</div></div></footer>"""
+APP_HEADER_HTML = r"""<header class='app-header'><div class='app-header-inner'><a class='app-brand' href='{{url_for("painel")}}'><img src='{{url_for("static",filename="logo_contatos_zap_icon.png")}}' alt='Contatos Zap'><span><strong>Contatos Zap</strong><small>Plataforma de consultas</small></span></a><nav class='app-nav'><a class='nav-primary' href='{{url_for("painel")}}'>Consultar</a><a href='{{url_for("historico")}}'>Histórico</a>{% if asaas_api_configurada() %}<a href='{{url_for("saldo")}}'>Adicionar saldo</a>{% endif %}{% if support_whatsapp_url %}<a href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>Suporte</a>{% endif %}<a href='{{url_for("minha_conta")}}'>Minha conta</a>{% if usuario and usuario.perfil=='ADMIN' %}<a href='{{url_for("admin")}}'>Administração</a>{% endif %}<a class='nav-exit' href='{{url_for("logout")}}'>Sair</a></nav></div></header>"""
 
-PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Consultas Contatos Zap</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'>
-<div class='top'><div class='brand'><div class='logo'>📊</div><div><h1>Consultas Contatos Zap</h1><p>Olá, {{usuario.usuario}}.</p><div class='brand-link'>contatoszap.com</div></div></div><div class='nav'>{% if asaas_api_configurada %}<a class='btn-saldo' href='{{url_for("saldo")}}'>💳 Adicionar saldo</a>{% elif whatsapp_saldo_url %}<a class='btn-saldo' href='{{whatsapp_saldo_url}}' target='_blank' rel='noopener'>💳 Adicionar saldo</a>{% endif %}{% if support_whatsapp_url %}<a class='btn2' href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>💬 Suporte</a>{% endif %}{% if usuario.perfil=='ADMIN' %}<a class='btn2' href='{{url_for("admin")}}'>⚙️ Administração</a>{% endif %}<a class='btn2' href='{{url_for("logout")}}'>Sair</a></div></div>
+LOGIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='theme-color' content='#0f766e'><link rel='icon' href='{{url_for("static",filename="logo_contatos_zap_icon.png")}}'><title>Entrar · Contatos Zap</title>""" + BASE_STYLE + r"""</head><body class='loginbody'><main class='auth-shell'><div class='login-card'><div class='auth-brand'><img src='{{url_for("static",filename="logo_contatos_zap.png")}}' alt='Contatos Zap'><h1>Acesse sua conta</h1><p>Consulte, filtre e exporte seus contatos em um ambiente seguro.</p></div>{% if erro %}<div class='flash erro'>{{erro}}</div>{% endif %}{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}<form method='post'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><label>Usuário</label><input name='usuario' autocomplete='username' autofocus required><label>Senha</label><input type='password' name='senha' autocomplete='current-password' required><div class='auth-actions'><button class='btn' type='submit'>Entrar</button><a class='auth-secondary' href='{{url_for("cadastro")}}'>Criar minha conta</a></div></form><div class='auth-links'>{% if support_whatsapp_url %}<a href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>Precisa de ajuda? Suporte</a>{% endif %}</div></div></main>""" + SITE_FOOTER_HTML + r"""</body></html>"""
+PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Consultas Contatos Zap</title>""" + BASE_STYLE + r"""</head><body>""" + APP_HEADER_HTML + r"""<div class='wrap'>
+<div class='page-heading'><div><h1>Consulta de contatos</h1><p>Olá, {{usuario.usuario}}. Configure os filtros e gere sua lista com segurança.</p></div><span class='security-badge'>🔒 Ambiente protegido</span></div>
 {% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}
 <div class='grid'>
 <div class='card w3 metric'><strong>{{"{:,}".format(usuario.saldo).replace(",", ".")}}</strong><span>Saldo total</span></div>
@@ -1237,12 +1294,9 @@ PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
     esconderContagem();
   });
 })();
-</script></body></html>"""
-SALDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Adicionar saldo</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'>
-<div class='top'>
-  <div class='brand'><div class='logo'>💳</div><div><h1>Adicionar saldo</h1><p>Recarga automática via Asaas.</p><div class='brand-link'>Contatos Zap</div></div></div>
-  <div class='nav'>{% if support_whatsapp_url %}<a class='btn2' href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>💬 Suporte</a>{% endif %}<a class='btn2' href='{{url_for("painel")}}'>← Voltar ao painel</a></div>
-</div>
+</script>""" + SITE_FOOTER_HTML + r"""</body></html>"""
+SALDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Adicionar saldo</title>""" + BASE_STYLE + r"""</head><body>""" + APP_HEADER_HTML + r"""<div class='wrap'>
+<div class='page-heading'><div><h1>Adicionar saldo</h1><p>Escolha um plano e conclua o pagamento com segurança.</p></div><span class='security-badge'>🔒 Pagamento seguro via Asaas</span></div>
 {% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}
 <div class='grid'>
   <div class='card w4 metric'><strong>{{"{:,}".format(usuario.saldo).replace(",", ".")}}</strong><span>Saldo atual</span></div>
@@ -1251,7 +1305,7 @@ SALDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><m
   <div class='card w12'>
     <div class='section-title'>Escolha uma recarga</div>
     {% if not automatico %}<div class='flash erro'>A integração automática ainda não está completa. Falta configurar o token do Webhook do Asaas no Railway.</div>{% endif %}
-    <div class='asaas-note'>Pagamento seguro via Asaas. Após a confirmação, seu saldo é atualizado automaticamente..</div>
+    <div class='asaas-note'>Pagamento seguro via Asaas. Após a confirmação, seu saldo é atualizado automaticamente.</div>
     <div style='margin-top:14px'>
       {% for grupo in pacotes|groupby('categoria') %}
         <div class='plan-group-title'>{{grupo.grouper}}</div>
@@ -1292,9 +1346,9 @@ SALDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><m
       </tbody>
     </table></div>
   </div>
-</div></div></body></html>"""
+</div></div>""" + SITE_FOOTER_HTML + r"""</body></html>"""
 
-PEDIDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta http-equiv='refresh' content='5'><title>Pedido</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'><div class='top'><div class='brand'><div class='logo'>📦</div><div><h1>Pedido #{{p.id}}</h1><p>{% if p.status in ['AGUARDANDO','PROCESSANDO'] %}Atualização automática a cada 5 segundos.{% else %}Detalhes da exportação.{% endif %}</p></div></div><div class='nav'><a class='btn2' href='{{url_for("painel")}}'>← Voltar</a></div></div>
+PEDIDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta http-equiv='refresh' content='5'><title>Pedido</title>""" + BASE_STYLE + r"""</head><body>""" + APP_HEADER_HTML + r"""<div class='wrap'><div class='page-heading'><div><h1>Pedido #{{p.id}}</h1><p>{% if p.status in ['AGUARDANDO','PROCESSANDO'] %}Seu pedido está sendo preparado. Esta página é atualizada automaticamente.{% else %}Acompanhe os detalhes da sua exportação.{% endif %}</p></div></div>
 <div class='grid'>
 <div class='card w3 metric'><strong>{{p.progresso}}%</strong><span>Progresso</span></div>
 <div class='card w3 metric'><strong>{{p.status}}</strong><span>Status</span></div>
@@ -1326,12 +1380,19 @@ PEDIDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><
 </details>
 {% endif %}
 </div>
-</div></div></body></html>"""
-ADMIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Administração</title>""" + BASE_STYLE + r"""</head><body><div class='wrap'><div class='top'><div class='brand'><div class='logo'>⚙️</div><div><h1>Administração</h1><p>Usuários, saldos e acessos.</p></div></div><div class='nav'><a class='btn2' href='{{url_for("painel")}}'>← Painel</a><a class='btn2' href='{{url_for("logout")}}'>Sair</a></div></div>
+</div></div>""" + SITE_FOOTER_HTML + r"""</body></html>"""
+ADMIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Administração · Contatos Zap</title>""" + BASE_STYLE + r"""</head><body>""" + APP_HEADER_HTML + r"""<div class='wrap'><div class='page-heading'><div><h1>Administração</h1><p>Gerencie clientes, saldos e acessos da plataforma.</p></div></div>
 {% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}
-<div class='grid'><div class='card w4'><h3>Criar usuário</h3><form method='post' action='{{url_for("admin_criar_usuario")}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><label>Usuário</label><input name='usuario' required><label style='margin-top:11px'>Telefone do cliente</label><input name='telefone' inputmode='numeric' placeholder='77998334733' required><div class='helper'>Obrigatório. Use DDD + número. Esse telefone identifica a pasta de contatos já enviados.</div><label style='margin-top:11px'>Senha</label><input type='password' name='senha' required><label style='margin-top:11px'>Saldo inicial</label><input type='number' name='saldo' value='0' min='0' required><button class='btn' type='submit' style='width:100%;margin-top:13px'>Criar usuário</button></form></div><div class='card w4 metric'><strong>{{total_clientes}}</strong><span>Clientes</span></div><div class='card w4 metric'><strong>{{"{:,}".format(total_saldo).replace(",", ".")}}</strong><span>Saldo total dos clientes</span></div>
-<div class='card w12'><h3>Usuários</h3><div class='table-wrap'><table><thead><tr><th>Usuário</th><th>Telefone</th><th>Saldo</th><th>Reservado</th><th>Status</th><th>Ações</th></tr></thead><tbody>{% for u in usuarios %}<tr><td><b>{{u.usuario}}</b>{% if u.perfil=='ADMIN' %} <span class='muted'>ADMIN</span>{% endif %}</td><td>{% if u.telefone %}<b>{{u.telefone}}</b>{% elif u.perfil!='ADMIN' %}<span class='pill BLOQUEADO'>SEM TELEFONE</span>{% else %}<span class='muted'>—</span>{% endif %}</td><td>{{"{:,}".format(u.saldo).replace(",", ".")}}</td><td>{{"{:,}".format(u.reservado).replace(",", ".")}}</td><td><span class='pill {% if u.ativo %}ATIVO{% else %}BLOQUEADO{% endif %}'>{% if u.ativo %}ATIVO{% else %}BLOQUEADO{% endif %}</span></td><td>{% if u.perfil!='ADMIN' %}<div class='actions'><form method='post' action='{{url_for("admin_telefone",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input name='telefone' inputmode='numeric' value='{{u.telefone or ""}}' placeholder='Telefone' required><button class='btn2'>Telefone</button></form><form method='post' action='{{url_for("admin_saldo",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input type='number' name='valor' placeholder='+/- saldo' required><button class='btn2'>Saldo</button></form><form method='post' action='{{url_for("admin_toggle",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><button class='{% if u.ativo %}danger{% else %}btn2{% endif %}'>{% if u.ativo %}Bloquear{% else %}Ativar{% endif %}</button></form><form method='post' action='{{url_for("admin_senha",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input type='password' name='senha' placeholder='Nova senha' required><button class='btn2'>Senha</button></form></div>{% else %}<span class='muted'>Conta administrativa</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div></div></div></div></body></html>"""
+<div class='grid'><div class='card w4'><h3>Criar usuário</h3><form method='post' action='{{url_for("admin_criar_usuario")}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><label>Usuário</label><input name='usuario' required><label style='margin-top:11px'>E-mail</label><input type='email' name='email' placeholder='cliente@exemplo.com'><label style='margin-top:11px'>Telefone do cliente</label><input name='telefone' inputmode='numeric' placeholder='77998334733' required><div class='helper'>Obrigatório. Use DDD + número. Esse telefone identifica a pasta de contatos já enviados.</div><label style='margin-top:11px'>Senha</label><input type='password' name='senha' required><label style='margin-top:11px'>Saldo inicial</label><input type='number' name='saldo' value='0' min='0' required><button class='btn' type='submit' style='width:100%;margin-top:13px'>Criar usuário</button></form></div><div class='card w4 metric'><strong>{{total_clientes}}</strong><span>Clientes</span></div><div class='card w4 metric'><strong>{{"{:,}".format(total_saldo).replace(",", ".")}}</strong><span>Saldo total dos clientes</span></div>
+<div class='card w12'><h3>Usuários</h3><div class='table-wrap'><table><thead><tr><th>Usuário</th><th>E-mail</th><th>Telefone</th><th>Saldo</th><th>Reservado</th><th>Status</th><th>Ações</th></tr></thead><tbody>{% for u in usuarios %}<tr><td><b>{{u.usuario}}</b>{% if u.perfil=='ADMIN' %} <span class='muted'>ADMIN</span>{% endif %}</td><td>{{u.email or '—'}}</td><td>{% if u.telefone %}<b>{{u.telefone}}</b>{% elif u.perfil!='ADMIN' %}<span class='pill BLOQUEADO'>SEM TELEFONE</span>{% else %}<span class='muted'>—</span>{% endif %}</td><td>{{"{:,}".format(u.saldo).replace(",", ".")}}</td><td>{{"{:,}".format(u.reservado).replace(",", ".")}}</td><td><span class='pill {% if u.ativo %}ATIVO{% else %}BLOQUEADO{% endif %}'>{% if u.ativo %}ATIVO{% else %}BLOQUEADO{% endif %}</span></td><td>{% if u.perfil!='ADMIN' %}<div class='actions'><form method='post' action='{{url_for("admin_telefone",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input name='telefone' inputmode='numeric' value='{{u.telefone or ""}}' placeholder='Telefone' required><button class='btn2'>Telefone</button></form><form method='post' action='{{url_for("admin_saldo",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input type='number' name='valor' placeholder='+/- saldo' required><button class='btn2'>Saldo</button></form><form method='post' action='{{url_for("admin_toggle",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><button class='{% if u.ativo %}danger{% else %}btn2{% endif %}'>{% if u.ativo %}Bloquear{% else %}Ativar{% endif %}</button></form><form method='post' action='{{url_for("admin_senha",usuario_id=u.id)}}'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input type='password' name='senha' placeholder='Nova senha' required><button class='btn2'>Senha</button></form></div>{% else %}<span class='muted'>Conta administrativa</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div></div></div></div>""" + SITE_FOOTER_HTML + r"""</body></html>"""
 
+
+
+CADASTRO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='theme-color' content='#0f766e'><link rel='icon' href='{{url_for("static",filename="logo_contatos_zap_icon.png")}}'><title>Criar conta · Contatos Zap</title>""" + BASE_STYLE + r"""</head><body class='loginbody'><main class='auth-shell'><div class='login-card'><div class='auth-brand'><img src='{{url_for("static",filename="logo_contatos_zap.png")}}' alt='Contatos Zap'><h1>Crie sua conta</h1><p>Preencha seus dados para acessar a plataforma Contatos Zap.</p></div>{% if erro %}<div class='flash erro'>{{erro}}</div>{% endif %}<form method='post'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input type='text' name='website' tabindex='-1' autocomplete='off' style='position:absolute;left:-9999px' aria-hidden='true'><label>Usuário</label><input name='usuario' value='{{form.usuario}}' minlength='3' maxlength='40' pattern='[A-Za-z0-9._-]+' autocomplete='username' placeholder='Ex.: empresaoliveira' required><div class='helper'>Use letras, números, ponto, hífen ou underline.</div><label style='margin-top:12px'>E-mail</label><input type='email' name='email' value='{{form.email}}' autocomplete='email' placeholder='voce@empresa.com' required><label style='margin-top:12px'>Telefone</label><input name='telefone' value='{{form.telefone}}' inputmode='numeric' pattern='[0-9]{10,11}' minlength='10' maxlength='11' autocomplete='tel-national' placeholder='77998334733' required><div class='auth-note'><b>Importante:</b> use DDD + número, somente números. Este telefone identifica seu histórico de contatos já enviados e não poderá ser alterado pela sua conta.</div><label>Senha</label><input type='password' name='senha' minlength='8' autocomplete='new-password' required><label>Confirmar senha</label><input type='password' name='confirmar_senha' minlength='8' autocomplete='new-password' required><div class='terms-check'><input id='aceite' type='checkbox' name='aceite' value='1' required><label for='aceite'>Li e concordo com os <a href='{{terms_url}}' target='_blank' rel='noopener'>Termos de Uso</a> e com a <a href='{{privacy_url}}' target='_blank' rel='noopener'>Política de Privacidade</a>.</label></div><button class='btn' type='submit' style='width:100%'>Criar conta</button><a class='auth-secondary' style='margin-top:8px' href='{{url_for("login")}}'>Já tenho uma conta</a></form></div></main>""" + SITE_FOOTER_HTML + r"""</body></html>"""
+
+CONTA_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Minha conta · Contatos Zap</title>""" + BASE_STYLE + r"""</head><body>""" + APP_HEADER_HTML + r"""<div class='wrap'><div class='page-heading'><div><h1>Minha conta</h1><p>Dados vinculados ao seu acesso na plataforma.</p></div><span class='security-badge'>🔒 Conta protegida</span></div><div class='grid'><div class='card w6'><div class='section-title'>Dados da conta</div><label>Usuário</label><div class='readonly-box'>{{usuario.usuario}}</div><label style='margin-top:13px'>E-mail</label><div class='readonly-box'>{{usuario.email or 'Não informado'}}</div><label style='margin-top:13px'>Telefone</label><div class='readonly-box'>{{usuario.telefone or 'Não informado'}}</div><div class='auth-note' style='margin-top:12px'>O telefone é o identificador do seu histórico de contatos já enviados e não pode ser alterado pela conta do cliente. Se houver necessidade de correção, entre em contato com o suporte.</div></div><div class='card w6'><div class='section-title'>Segurança e suporte</div><p class='muted' style='font-size:12px;line-height:1.65'>Se você identificar qualquer problema no acesso ou nos seus dados cadastrais, fale com nosso suporte. Nunca compartilhe sua senha.</p>{% if support_whatsapp_url %}<a class='btn' href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>💬 Falar com o suporte</a>{% endif %}</div></div></div>""" + SITE_FOOTER_HTML + r"""</body></html>"""
+
+HISTORICO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Histórico · Contatos Zap</title>""" + BASE_STYLE + r"""</head><body>""" + APP_HEADER_HTML + r"""<div class='wrap'><div class='page-heading'><div><h1>Histórico de pedidos</h1><p>Acompanhe suas exportações recentes e baixe novamente arquivos ainda disponíveis.</p></div></div><div class='card w12'><div class='table-wrap'>{% if pedidos %}<table><thead><tr><th>Pedido</th><th>Quantidade</th><th>Status</th><th>Progresso</th><th>Data</th><th>Ações</th></tr></thead><tbody>{% for p in pedidos %}<tr><td><b>#{{p.id}}</b></td><td>{{"{:,}".format(p.quantidade).replace(",", ".")}}</td><td><span class='pill {{p.status}}'>{{p.status}}</span></td><td>{{p.progresso}}%</td><td>{{p.criado_em}}</td><td><div class='actions'><a class='btn2' href='{{url_for("ver_pedido",pedido_id=p.id)}}'>Abrir</a>{% if p.status=='CONCLUIDO' and p.arquivo_chave %}<a class='btn' href='{{url_for("baixar_pedido",pedido_id=p.id)}}'>📥 Baixar</a>{% endif %}</div></td></tr>{% endfor %}</tbody></table>{% else %}<p class='muted'>Você ainda não possui pedidos.</p>{% endif %}</div></div></div>""" + SITE_FOOTER_HTML + r"""</body></html>"""
 
 @app.route("/health")
 def health():
@@ -1344,6 +1405,8 @@ def login():
         return redirect(url_for("painel"))
     erro = None
     if request.method == "POST":
+        if not validar_csrf():
+            return render_template_string(LOGIN_HTML, erro="Sua sessão expirou. Atualize a página e tente novamente."), 400
         nome = request.form.get("usuario", "").strip()
         senha = request.form.get("senha", "")
         with conectar() as conn:
@@ -1360,6 +1423,96 @@ def login():
             csrf_token()
             return redirect(url_for("painel"))
     return render_template_string(LOGIN_HTML, erro=erro)
+
+
+
+@app.route("/cadastro", methods=["GET", "POST"])
+def cadastro():
+    if session.get("usuario_id"):
+        return redirect(url_for("painel"))
+
+    erro = None
+    form = {
+        "usuario": request.form.get("usuario", "").strip(),
+        "email": request.form.get("email", "").strip(),
+        "telefone": re.sub(r"\D", "", request.form.get("telefone", "")),
+    }
+
+    if request.method == "POST":
+        if not validar_csrf():
+            return render_template_string(CADASTRO_HTML, erro="Sua sessão expirou. Atualize a página e tente novamente.", form=form), 400
+        if request.form.get("website"):
+            return render_template_string(CADASTRO_HTML, erro="Não foi possível concluir o cadastro.", form=form), 400
+
+        nome = form["usuario"]
+        email = normalizar_email(form["email"])
+        telefone = normalizar_telefone_cliente(form["telefone"])
+        senha = request.form.get("senha", "")
+        confirmar = request.form.get("confirmar_senha", "")
+        aceite = request.form.get("aceite") == "1"
+
+        if not usuario_publico_valido(nome):
+            erro = "O usuário deve ter de 3 a 40 caracteres e usar apenas letras, números, ponto, hífen ou underline."
+        elif not email_valido(email):
+            erro = "Informe um e-mail válido."
+        elif not telefone or not re.fullmatch(r"\d{10,11}", telefone):
+            erro = "Informe um telefone válido com DDD + número, somente números."
+        elif len(senha) < 8:
+            erro = "A senha precisa ter pelo menos 8 caracteres."
+        elif senha != confirmar:
+            erro = "As senhas informadas não são iguais."
+        elif not aceite:
+            erro = "Para criar a conta, é necessário aceitar os Termos de Uso e a Política de Privacidade."
+        else:
+            try:
+                with conectar() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id FROM usuarios WHERE LOWER(usuario)=LOWER(%s) LIMIT 1", (nome,))
+                        if cur.fetchone():
+                            erro = "Este usuário já está em uso."
+                        if not erro:
+                            cur.execute("SELECT id FROM usuarios WHERE perfil='CLIENTE' AND LOWER(email)=LOWER(%s) LIMIT 1", (email,))
+                            if cur.fetchone():
+                                erro = "Este e-mail já está cadastrado."
+                        if not erro:
+                            cur.execute("SELECT id FROM usuarios WHERE perfil='CLIENTE' AND telefone=%s LIMIT 1", (telefone,))
+                            if cur.fetchone():
+                                erro = "Este telefone já está cadastrado."
+                        if not erro:
+                            cur.execute("""
+                                INSERT INTO usuarios
+                                    (usuario, senha_hash, perfil, saldo, ativo, telefone, email, termos_aceitos_em, privacidade_aceita_em)
+                                VALUES (%s,%s,'CLIENTE',0,TRUE,%s,%s,NOW(),NOW())
+                                RETURNING id
+                            """, (nome, generate_password_hash(senha), telefone, email))
+                            uid = cur.fetchone()["id"]
+                            conn.commit()
+                            session.clear()
+                            session["usuario_id"] = uid
+                            csrf_token()
+                            flash("Conta criada com sucesso. Bem-vindo ao Contatos Zap.")
+                            return redirect(url_for("painel"))
+            except psycopg.errors.UniqueViolation:
+                erro = "Já existe uma conta com um desses dados."
+
+    return render_template_string(CADASTRO_HTML, erro=erro, form=form)
+
+
+@app.route("/minha-conta")
+@login_required
+def minha_conta():
+    return render_template_string(CONTA_HTML, usuario=usuario_atual())
+
+
+@app.route("/historico")
+@login_required
+def historico():
+    u = usuario_atual()
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM pedidos WHERE usuario_id=%s ORDER BY id DESC LIMIT 100", (u["id"],))
+            pedidos = cur.fetchall()
+    return render_template_string(HISTORICO_HTML, usuario=u, pedidos=pedidos)
 
 
 @app.route("/logout")
@@ -1975,7 +2128,7 @@ def admin():
             usuarios = cur.fetchall()
             cur.execute("SELECT COUNT(*) FILTER (WHERE perfil='CLIENTE') total_clientes, COALESCE(SUM(saldo) FILTER (WHERE perfil='CLIENTE'),0) total_saldo FROM usuarios")
             resumo = cur.fetchone()
-    return render_template_string(ADMIN_HTML, usuarios=usuarios, total_clientes=resumo["total_clientes"] or 0, total_saldo=resumo["total_saldo"] or 0)
+    return render_template_string(ADMIN_HTML, usuario=usuario_atual(), usuarios=usuarios, total_clientes=resumo["total_clientes"] or 0, total_saldo=resumo["total_saldo"] or 0)
 
 
 @app.route("/admin/usuarios/criar", methods=["POST"])
@@ -1986,6 +2139,10 @@ def admin_criar_usuario():
     nome = request.form.get("usuario", "").strip()
     senha = request.form.get("senha", "")
     telefone = normalizar_telefone_cliente(request.form.get("telefone", ""))
+    email = normalizar_email(request.form.get("email", ""))
+    if email and not email_valido(email):
+        flash("Informe um e-mail válido ou deixe o campo vazio.", "erro")
+        return redirect(url_for("admin"))
     try:
         saldo = int(request.form.get("saldo", "0") or 0)
     except ValueError:
@@ -1996,14 +2153,14 @@ def admin_criar_usuario():
     try:
         with conectar() as conn:
             with conn.cursor() as cur:
-                cur.execute("INSERT INTO usuarios(usuario,senha_hash,perfil,saldo,ativo,telefone) VALUES(%s,%s,'CLIENTE',%s,TRUE,%s) RETURNING id", (nome, generate_password_hash(senha), saldo, telefone))
+                cur.execute("INSERT INTO usuarios(usuario,senha_hash,perfil,saldo,ativo,telefone,email) VALUES(%s,%s,'CLIENTE',%s,TRUE,%s,%s) RETURNING id", (nome, generate_password_hash(senha), saldo, telefone, email or None))
                 uid = cur.fetchone()["id"]
                 if saldo:
                     cur.execute("INSERT INTO movimentacoes(usuario_id,valor,tipo,descricao) VALUES(%s,%s,'CREDITO_INICIAL','Saldo inicial')", (uid, saldo))
             conn.commit()
         flash("Usuário criado com sucesso.")
     except psycopg.errors.UniqueViolation:
-        flash("Já existe um usuário ou cliente com esse telefone.", "erro")
+        flash("Já existe um usuário, telefone ou e-mail com esses dados.", "erro")
     return redirect(url_for("admin"))
 
 
