@@ -1540,7 +1540,6 @@ def painel():
         disponivel=disponivel,
         whatsapp_saldo_url=WHATSAPP_SALDO_URL,
         support_whatsapp_url=SUPPORT_WHATSAPP_URL,
-        asaas_api_configurada=asaas_api_configurada(),
         recentes=recentes,
         menu_pronto=menu_pronto,
         ufs=opcoes("uf"),
