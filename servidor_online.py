@@ -115,9 +115,9 @@ if not SUPPORT_WHATSAPP_URL and WHATSAPP_NUMBER:
     )
 
 # Identidade pública da plataforma. Todos podem ser sobrescritos no Railway.
-SALES_SITE_URL = os.getenv("SALES_SITE_URL", "https://contatozap.com").strip()
-TERMS_URL = os.getenv("TERMS_URL", "https://contatozap.com/termos_de_uso.html").strip()
-PRIVACY_URL = os.getenv("PRIVACY_URL", "https://contatozap.com/privacy.html").strip()
+SALES_SITE_URL = os.getenv("SALES_SITE_URL", "https://app.contatozap.com").strip()
+TERMS_URL = os.getenv("TERMS_URL", "https://app.contatozap.com/termos").strip()
+PRIVACY_URL = os.getenv("PRIVACY_URL", "https://app.contatozap.com/privacidade").strip()
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "suporte@contatoszap.com").strip()
 COMPANY_CNPJ = os.getenv("COMPANY_CNPJ", "49.710.958/0001-65").strip()
 COPYRIGHT_YEAR = os.getenv("COPYRIGHT_YEAR", "2026").strip() or "2026"
