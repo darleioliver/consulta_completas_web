@@ -20,9 +20,9 @@ Baseada na V11. Mantém consultas, exportações, histórico local do agente, Bu
 - correção da ordem de inicialização dos globals Jinja da V11.
 
 ## Dados institucionais padrão
-- Site: `https://contatozap.com`
-- Termos: `https://contatozap.com/termos_de_uso.html`
-- Privacidade: `https://contatozap.com/privacy.html`
+- Site: `https://app.contatozap.com/`
+- Termos: `https://app.contatozap.com/termos`
+- Privacidade: `https://app.contatozap.com/privacidade`
 - E-mail: `suporte@contatoszap.com`
 - CNPJ: `49.710.958/0001-65`
 
@@ -59,3 +59,13 @@ Acionador:
 Depois publique o container no GTM.
 
 Não é necessário colocar o snippet antigo `Chamou no ZAP 2025` dentro do Python. A plataforma apenas envia o evento ao GTM; o GTM cuida da conversão do Google Ads.
+
+
+## V12.3 — Ajustes visuais e institucionais
+- Rodapé da tela de login/cadastro integrado ao fundo azul-escuro (sem bloco branco).
+- Ordem dos planos na página Adicionar saldo: Básico → Intermediário → Avançado.
+- Site oficial: `https://app.contatozap.com/`
+- Termos de Uso: `https://app.contatozap.com/termos`
+- Política de Privacidade: `https://app.contatozap.com/privacidade`
+- Valores legados dessas URLs no Railway são migrados automaticamente para os novos endereços.
+- Toda a lógica atual de login, cadastro, GTM, Asaas, saldo, consultas, histórico e downloads foi preservada.

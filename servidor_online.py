@@ -114,10 +114,30 @@ if not SUPPORT_WHATSAPP_URL and WHATSAPP_NUMBER:
         "?text=Ol%C3%A1%2C%20preciso%20de%20suporte%20no%20Contatos%20Zap."
     )
 
-# Identidade pública da plataforma. Todos podem ser sobrescritos no Railway.
-SALES_SITE_URL = os.getenv("SALES_SITE_URL", "https://app.contatozap.com").strip()
-TERMS_URL = os.getenv("TERMS_URL", "https://app.contatozap.com/termos").strip()
-PRIVACY_URL = os.getenv("PRIVACY_URL", "https://app.contatozap.com/privacidade").strip()
+# Identidade pública da plataforma.
+# Valores antigos do Railway são migrados automaticamente para os links oficiais atuais.
+def _url_institucional(env_name, padrao_atual, urls_legadas=()):
+    valor = os.getenv(env_name, "").strip()
+    legadas = {u.rstrip("/") for u in urls_legadas}
+    if not valor or valor.rstrip("/") in legadas:
+        return padrao_atual
+    return valor
+
+SALES_SITE_URL = _url_institucional(
+    "SALES_SITE_URL",
+    "https://app.contatozap.com/",
+    ("https://contatozap.com", "https://contatozap.com/"),
+)
+TERMS_URL = _url_institucional(
+    "TERMS_URL",
+    "https://app.contatozap.com/termos",
+    ("https://contatozap.com/termos_de_uso.html",),
+)
+PRIVACY_URL = _url_institucional(
+    "PRIVACY_URL",
+    "https://app.contatozap.com/privacidade",
+    ("https://contatozap.com/privacy.html",),
+)
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "suporte@contatoszap.com").strip()
 COMPANY_CNPJ = os.getenv("COMPANY_CNPJ", "49.710.958/0001-65").strip()
 COPYRIGHT_YEAR = os.getenv("COPYRIGHT_YEAR", "2026").strip() or "2026"
@@ -713,7 +733,7 @@ BASE_STYLE = r"""
 .app-nav{display:flex;gap:4px;align-items:center;justify-content:flex-end;flex-wrap:wrap}.app-nav a{padding:9px 10px;border-radius:10px;font-size:11.5px;font-weight:780;color:#475467}.app-nav a:hover{background:#f2f7f7;color:#0f766e}.app-nav .nav-primary{background:#e9f8f5;color:#0f766e}.app-nav .nav-exit{color:#8a3d35}
 .page-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:7px 0 18px}.page-heading h1{font-size:23px;margin:0;letter-spacing:-.02em}.page-heading p{margin:5px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
 .site-footer{margin-top:34px;border-top:1px solid #e5eaf1;background:#fff}.site-footer-inner{max-width:1360px;margin:auto;padding:22px;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}.site-footer strong{font-size:12px}.site-footer p{margin:4px 0 0;font-size:10.5px;color:#778395}.site-footer-links{display:flex;gap:12px;flex-wrap:wrap}.site-footer-links a{font-size:11px;font-weight:750;color:#566274}.site-footer-links a:hover{color:#0f766e}
-.loginbody{min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(circle at 8% 0,rgba(20,184,166,.19),transparent 31%),linear-gradient(145deg,#08111f,#101b2d)}.auth-shell{flex:1;width:100%;display:grid;place-items:center;padding:38px 14px}.login-card{width:min(460px,calc(100% - 4px));background:#fff;border-radius:25px;padding:32px;box-shadow:0 26px 85px rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.55)}.auth-brand{text-align:center;margin-bottom:23px}.auth-brand img{width:180px;max-width:70%;height:auto;object-fit:contain}.auth-brand h1{font-size:24px;margin:10px 0 7px}.auth-brand p{margin:0 auto;color:var(--muted);font-size:12.5px;line-height:1.5;max-width:330px}.auth-actions{display:grid;gap:8px;margin-top:9px}.auth-secondary{display:flex;align-items:center;justify-content:center;height:42px;border-radius:11px;border:1px solid #dce4eb;font-size:12.5px;font-weight:800;color:#344054;background:#fff}.auth-links{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:18px}.auth-links a{font-size:10.5px;font-weight:750;color:#667085}.auth-note{padding:11px 12px;border-radius:11px;background:#f5fbfa;border:1px solid #d8f0ec;color:#355f5a;font-size:10.5px;line-height:1.5;margin:10px 0 14px}.terms-check{display:flex;align-items:flex-start;gap:8px;margin:12px 0}.terms-check input{width:auto;height:auto;margin-top:3px}.terms-check label{font-size:10.5px;font-weight:600;line-height:1.5;margin:0;color:#586474}.terms-check a{color:#0f766e;font-weight:800}.readonly-box{background:#f7f9fb;border:1px solid #e1e7ee;border-radius:11px;padding:11px 12px;font-size:13px;color:#344054}.security-badge{display:inline-flex;align-items:center;gap:6px;border:1px solid #d7efe9;background:#effaf7;color:#0b6a61;border-radius:999px;padding:6px 9px;font-size:10px;font-weight:850}
+.loginbody{min-height:100vh;display:flex;flex-direction:column;background:radial-gradient(circle at 8% 0,rgba(20,184,166,.19),transparent 31%),linear-gradient(145deg,#08111f,#101b2d)}.loginbody .site-footer{background:transparent;border-top:1px solid rgba(203,213,225,.14);color:#f8fafc}.loginbody .site-footer p{color:#94a3b8}.loginbody .site-footer-links a{color:#cbd5e1}.loginbody .site-footer-links a:hover{color:#34d399}.auth-shell{flex:1;width:100%;display:grid;place-items:center;padding:38px 14px}.login-card{width:min(460px,calc(100% - 4px));background:#fff;border-radius:25px;padding:32px;box-shadow:0 26px 85px rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.55)}.auth-brand{text-align:center;margin-bottom:23px}.auth-brand img{width:180px;max-width:70%;height:auto;object-fit:contain}.auth-brand h1{font-size:24px;margin:10px 0 7px}.auth-brand p{margin:0 auto;color:var(--muted);font-size:12.5px;line-height:1.5;max-width:330px}.auth-actions{display:grid;gap:8px;margin-top:9px}.auth-secondary{display:flex;align-items:center;justify-content:center;height:42px;border-radius:11px;border:1px solid #dce4eb;font-size:12.5px;font-weight:800;color:#344054;background:#fff}.auth-links{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:18px}.auth-links a{font-size:10.5px;font-weight:750;color:#667085}.auth-note{padding:11px 12px;border-radius:11px;background:#f5fbfa;border:1px solid #d8f0ec;color:#355f5a;font-size:10.5px;line-height:1.5;margin:10px 0 14px}.terms-check{display:flex;align-items:flex-start;gap:8px;margin:12px 0}.terms-check input{width:auto;height:auto;margin-top:3px}.terms-check label{font-size:10.5px;font-weight:600;line-height:1.5;margin:0;color:#586474}.terms-check a{color:#0f766e;font-weight:800}.readonly-box{background:#f7f9fb;border:1px solid #e1e7ee;border-radius:11px;padding:11px 12px;font-size:13px;color:#344054}.security-badge{display:inline-flex;align-items:center;gap:6px;border:1px solid #d7efe9;background:#effaf7;color:#0b6a61;border-radius:999px;padding:6px 9px;font-size:10px;font-weight:850}
 @media(max-width:900px){.app-header-inner{padding:9px 13px;align-items:flex-start;flex-direction:column}.app-nav{width:100%;justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.app-nav a{white-space:nowrap}.site-footer-inner{padding:18px 13px}.page-heading{flex-direction:column}.auth-shell{padding:24px 12px}}
 
 </style>
@@ -1327,10 +1347,10 @@ SALDO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><m
     {% if not automatico %}<div class='flash erro'>A integração automática ainda não está completa. Falta configurar o token do Webhook do Asaas no Railway.</div>{% endif %}
     <div class='asaas-note'>Pagamento seguro via Asaas. Após a confirmação, seu saldo é atualizado automaticamente.</div>
     <div style='margin-top:14px'>
-      {% for grupo in pacotes|groupby('categoria') %}
-        <div class='plan-group-title'>{{grupo.grouper}}</div>
+      {% for grupo in grupos_pacotes %}
+        <div class='plan-group-title'>{{grupo.categoria}}</div>
         <div class='saldo-packages'>
-        {% for p in grupo.list %}
+        {% for p in grupo.pacotes %}
           <div class='saldo-package'>
             <strong>{{"{:,}".format(p.creditos).replace(",", ".")}}</strong>
             <span class='muted' style='font-size:11px'>créditos</span>
@@ -1750,6 +1770,20 @@ def saldo():
             "valor": item["valor"],
             "valor_formatado": formatar_brl_decimal(item["valor"]),
         })
+
+    # Ordem comercial fixa dos planos na página de saldo.
+    ordem_categorias = {"Básico": 0, "Intermediário": 1, "Avançado": 2}
+    pacotes.sort(key=lambda p: (
+        ordem_categorias.get(p["categoria"], 99),
+        p["categoria"].casefold(),
+        p["creditos"],
+    ))
+    grupos_pacotes = []
+    for pacote in pacotes:
+        if not grupos_pacotes or grupos_pacotes[-1]["categoria"] != pacote["categoria"]:
+            grupos_pacotes.append({"categoria": pacote["categoria"], "pacotes": []})
+        grupos_pacotes[-1]["pacotes"].append(pacote)
+
     with conectar() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -1768,6 +1802,7 @@ def saldo():
         reservado=reservado,
         disponivel=disponivel,
         pacotes=pacotes,
+        grupos_pacotes=grupos_pacotes,
         recargas=recargas,
         automatico=asaas_automatico_configurado(),
         support_whatsapp_url=SUPPORT_WHATSAPP_URL,
