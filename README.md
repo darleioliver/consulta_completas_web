@@ -69,3 +69,11 @@ Não é necessário colocar o snippet antigo `Chamou no ZAP 2025` dentro do Pyth
 - Política de Privacidade: `https://app.contatozap.com/privacidade`
 - Valores legados dessas URLs no Railway são migrados automaticamente para os novos endereços.
 - Toda a lógica atual de login, cadastro, GTM, Asaas, saldo, consultas, histórico e downloads foi preservada.
+
+## V12.4 — Google Ads Data Manager / recargas Asaas
+- Integração opcional e desligada por padrão para importar compras Pix pagas a partir de `PAYMENT_RECEIVED`.
+- Registro e tentativas de envio pela tabela `google_ads_conversoes` (transação única por pagamento do Asaas).
+- Captura de gclid/gbraid/wbraid entre `app.contatozap.com` e `painel.contatozap.com`.
+- Status exclusivo para administrador: `/admin/google-ads/status`.
+- Configuração completa em `INSTRUCOES_GOOGLE_ADS_V12_4.md`.
+- Compatível com o agente local da versão anterior: **nenhuma alteração no agente**.

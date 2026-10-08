@@ -4,6 +4,7 @@ import os
 import re
 import secrets
 import time
+import threading
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import wraps
@@ -11,6 +12,7 @@ from functools import wraps
 import psycopg
 import boto3
 import requests
+from google_ads_dm import ads_configurado, enviar_evento, identificar_clique
 from flask import Flask, jsonify, redirect, render_template_string, request, session, url_for, flash
 from psycopg.rows import dict_row
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -142,6 +144,20 @@ SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "suporte@contatoszap.com").strip()
 COMPANY_CNPJ = os.getenv("COMPANY_CNPJ", "49.710.958/0001-65").strip()
 COPYRIGHT_YEAR = os.getenv("COPYRIGHT_YEAR", "2026").strip() or "2026"
 
+# Google Ads Data Manager: os pagamentos são enviados pelo servidor APENAS após
+# PAYMENT_RECEIVED e apenas após GOOGLE_DM_ENABLED=1 + credenciais configuradas.
+# Identificadores de clique ficam em cookie próprio nos subdomínios contatozap.com.
+ADS_COOKIE_SCRIPT = r"""<script>(function(){try{
+ var p=new URLSearchParams(window.location.search);
+ var keys=['gclid','gbraid','wbraid'],found=null;
+ keys.some(function(k){var v=p.get(k);if(v&&/^[A-Za-z0-9_.~+:/=\-]{6,500}$/.test(v)){
+ found={key:k,value:v};return true;}return false;});
+ if(!found)return;
+ keys.forEach(function(k){document.cookie='cz_ads_'+k+'=; Max-Age=0; Path=/; Domain=.contatozap.com; SameSite=Lax; Secure';});
+ document.cookie='cz_ads_'+found.key+'='+encodeURIComponent(found.value)+
+ '; Max-Age=7776000; Path=/; Domain=.contatozap.com; SameSite=Lax; Secure';
+ }catch(e){}})();</script>"""
+
 # Google Tag Manager — rastreamento da plataforma.
 # Pode ser alterado pelo Railway, mas o container padrão é o utilizado no Contatos Zap.
 GTM_CONTAINER_ID = os.getenv("GTM_CONTAINER_ID", "GTM-NQTCRWB5").strip()
@@ -233,7 +249,7 @@ app.jinja_env.globals.update(
     company_cnpj=COMPANY_CNPJ,
     copyright_year=COPYRIGHT_YEAR,
     support_whatsapp_url=SUPPORT_WHATSAPP_URL,
-    gtm_head=GTM_HEAD_HTML,
+    gtm_head=ADS_COOKIE_SCRIPT + GTM_HEAD_HTML,
     gtm_body=GTM_BODY_HTML,
 )
 
@@ -323,6 +339,10 @@ def init_db():
                     cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email VARCHAR(254)")
                     cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS termos_aceitos_em TIMESTAMPTZ")
                     cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS privacidade_aceita_em TIMESTAMPTZ")
+                    cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ads_gclid TEXT")
+                    cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ads_gbraid TEXT")
+                    cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ads_wbraid TEXT")
+                    cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ads_clique_registrado_em TIMESTAMPTZ")
                     cur.execute("""
                         CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_email_cliente
                         ON usuarios(LOWER(email))
@@ -456,6 +476,27 @@ def init_db():
                         )
                     """)
                     cur.execute("CREATE INDEX IF NOT EXISTS idx_asaas_eventos_payment ON asaas_eventos(asaas_payment_id)")
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS google_ads_conversoes (
+                            id BIGSERIAL PRIMARY KEY,
+                            asaas_payment_id TEXT UNIQUE NOT NULL,
+                            usuario_id BIGINT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+                            valor NUMERIC(12,2) NOT NULL,
+                            gclid TEXT,
+                            gbraid TEXT,
+                            wbraid TEXT,
+                            evento_em TIMESTAMPTZ NOT NULL,
+                            status VARCHAR(30) NOT NULL DEFAULT 'PENDENTE',
+                            tentativas INT NOT NULL DEFAULT 0,
+                            proxima_tentativa TIMESTAMPTZ,
+                            processando_em TIMESTAMPTZ,
+                            google_request_id TEXT,
+                            ultimo_erro TEXT,
+                            criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            enviado_em TIMESTAMPTZ
+                        )
+                    """)
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_google_ads_fila ON google_ads_conversoes(status, proxima_tentativa, id)")
 
                     cur.execute("""
                         INSERT INTO usuarios (usuario, senha_hash, perfil, saldo, ativo)
@@ -477,6 +518,117 @@ def init_db():
 
 
 init_db()
+
+
+def registrar_clique_google_usuario(cur, usuario_id):
+    """Salva o clique atribuído ao usuário, inclusive ao fazer login novamente."""
+    identificador = identificar_clique(request.args, request.cookies)
+    if not identificador:
+        return
+    cur.execute("""
+        UPDATE usuarios
+        SET ads_gclid=%s, ads_gbraid=%s, ads_wbraid=%s, ads_clique_registrado_em=NOW()
+        WHERE id=%s
+    """, (identificador.get("gclid"), identificador.get("gbraid"),
+          identificador.get("wbraid"), usuario_id))
+
+
+def colocar_pagamento_na_fila_google(cur, pagamento_id):
+    """Apenas pagamentos já creditados; 1 ID Asaas = 1 evento, transação atômica."""
+    cur.execute("""
+        INSERT INTO google_ads_conversoes
+          (asaas_payment_id, usuario_id, valor, gclid, gbraid, wbraid,
+           evento_em, status)
+        SELECT p.asaas_payment_id, p.usuario_id, p.valor,
+               u.ads_gclid, u.ads_gbraid, u.ads_wbraid,
+               COALESCE(p.creditado_em, NOW()),
+               CASE WHEN u.ads_gclid IS NOT NULL OR u.ads_gbraid IS NOT NULL
+                          OR u.ads_wbraid IS NOT NULL THEN 'PENDENTE'
+                    ELSE 'SEM_CLIQUE' END
+        FROM asaas_pagamentos p
+        JOIN usuarios u ON u.id = p.usuario_id
+        WHERE p.asaas_payment_id=%s AND p.creditado=TRUE AND p.valor > 0
+        ON CONFLICT (asaas_payment_id) DO NOTHING
+    """, (pagamento_id,))
+
+
+def processar_uma_conversao_google():
+    """Retira um item da fila com lease no PostgreSQL; jamais afeta saldo."""
+    if not ads_configurado():
+        return False
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                WITH alvo AS (
+                    SELECT id FROM google_ads_conversoes
+                    WHERE tentativas < 12 AND
+                          ((status='PENDENTE' AND (proxima_tentativa IS NULL OR proxima_tentativa <= NOW()))
+                            OR (status='PROCESSANDO' AND processando_em < NOW() - INTERVAL '10 minutes'))
+                    ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1
+                )
+                UPDATE google_ads_conversoes AS g
+                SET status='PROCESSANDO', processando_em=NOW(), tentativas=tentativas+1
+                FROM alvo WHERE g.id=alvo.id
+                RETURNING g.*
+            """)
+            item = cur.fetchone()
+        conn.commit()
+    if not item:
+        return False
+    try:
+        request_id = enviar_evento(item)
+    except Exception as exc:
+        erro = str(exc)[:400]
+        # Exponential backoff em minutos; sem envio dentro do webhook.
+        espera = min(720, 2 ** min(item['tentativas'], 9))
+        with conectar() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE google_ads_conversoes
+                    SET status=CASE WHEN tentativas >= 12 THEN 'FALHA' ELSE 'PENDENTE' END,
+                        proxima_tentativa=NOW() + (%s * INTERVAL '1 minute'),
+                        ultimo_erro=%s, processando_em=NULL
+                    WHERE id=%s AND status='PROCESSANDO'
+                """, (espera, erro, item['id']))
+            conn.commit()
+        app.logger.warning("Falha no envio de conversão Google (fila %s): %s", item['id'], erro)
+    else:
+        with conectar() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE google_ads_conversoes
+                    SET status='ENVIADO', google_request_id=%s, enviado_em=NOW(),
+                        ultimo_erro=NULL, processando_em=NULL
+                    WHERE id=%s AND status='PROCESSANDO'
+                """, (request_id, item['id']))
+            conn.commit()
+    return True
+
+
+def _google_ads_worker():
+    while True:
+        try:
+            encontrou = processar_uma_conversao_google()
+            if not encontrou:
+                time.sleep(60)
+        except Exception:
+            app.logger.exception("Erro ao consultar fila de conversões do Google Ads")
+            time.sleep(60)
+
+
+_google_worker_lock = threading.Lock()
+_google_worker_started = False
+
+
+@app.before_request
+def iniciar_worker_ads_quando_configurado():
+    global _google_worker_started
+    if not ads_configurado() or _google_worker_started:
+        return
+    with _google_worker_lock:
+        if not _google_worker_started:
+            threading.Thread(target=_google_ads_worker, name="google-ads-dm", daemon=True).start()
+            _google_worker_started = True
 
 
 def csrf_token():
@@ -742,7 +894,7 @@ BASE_STYLE = r"""
 SITE_FOOTER_HTML = r"""<footer class='site-footer'><div class='site-footer-inner'><div><strong>© {{copyright_year}} Contatos Zap</strong><p>CNPJ {{company_cnpj}} · {{support_email}}</p></div><div class='site-footer-links'><a href='{{sales_site_url}}' target='_blank' rel='noopener'>Site oficial</a><a href='{{terms_url}}' target='_blank' rel='noopener'>Termos de Uso</a><a href='{{privacy_url}}' target='_blank' rel='noopener'>Política de Privacidade</a>{% if support_whatsapp_url %}<a href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>Suporte</a>{% endif %}</div></div></footer>"""
 APP_HEADER_HTML = r"""<header class='app-header'><div class='app-header-inner'><a class='app-brand' href='{{url_for("painel")}}'><img src='{{url_for("static",filename="logo_contatos_zap_icon.png")}}' alt='Contatos Zap'><span><strong>Contatos Zap</strong><small>Plataforma de consultas</small></span></a><nav class='app-nav'><a class='nav-primary' href='{{url_for("painel")}}'>Consultar</a><a href='{{url_for("historico")}}'>Histórico</a>{% if asaas_api_configurada() %}<a href='{{url_for("saldo")}}'>Adicionar saldo</a>{% endif %}{% if support_whatsapp_url %}<a href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>Suporte</a>{% endif %}<a href='{{url_for("minha_conta")}}'>Minha conta</a>{% if usuario and usuario.perfil=='ADMIN' %}<a href='{{url_for("admin")}}'>Administração</a>{% endif %}<a class='nav-exit' href='{{url_for("logout")}}'>Sair</a></nav></div></header>"""
 
-LOGIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='theme-color' content='#0f766e'><link rel='icon' href='{{url_for("static",filename="logo_contatos_zap_icon.png")}}'><title>Entrar · Contatos Zap</title>""" + BASE_STYLE + r"""{{gtm_head|safe}}</head><body class='loginbody'>{{gtm_body|safe}}<main class='auth-shell'><div class='login-card'><div class='auth-brand'><img src='{{url_for("static",filename="logo_contatos_zap.png")}}' alt='Contatos Zap'><h1>Acesse sua conta</h1><p>Consulte, filtre e exporte seus leads como preferir.</p></div>{% if erro %}<div class='flash erro'>{{erro}}</div>{% endif %}{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}<form method='post'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><label>Usuário</label><input name='usuario' autocomplete='username' autofocus required><label>Senha</label><input type='password' name='senha' autocomplete='current-password' required><div class='auth-actions'><button class='btn' type='submit'>Entrar</button><a class='auth-secondary' href='{{url_for("cadastro")}}'>Criar minha conta</a></div></form><div class='auth-links'>{% if support_whatsapp_url %}<a href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>Precisa de ajuda? Suporte</a>{% endif %}</div></div></main>""" + SITE_FOOTER_HTML + r"""</body></html>"""
+LOGIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='theme-color' content='#0f766e'><link rel='icon' href='{{url_for("static",filename="logo_contatos_zap_icon.png")}}'><title>Entrar · Contatos Zap</title>""" + BASE_STYLE + r"""{{gtm_head|safe}}</head><body class='loginbody'>{{gtm_body|safe}}<main class='auth-shell'><div class='login-card'><div class='auth-brand'><img src='{{url_for("static",filename="logo_contatos_zap.png")}}' alt='Contatos Zap'><h1>Acesse sua conta</h1><p>Consulte, filtre e exporte seus contatos em um ambiente seguro.</p></div>{% if erro %}<div class='flash erro'>{{erro}}</div>{% endif %}{% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}<form method='post'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><label>Usuário</label><input name='usuario' autocomplete='username' autofocus required><label>Senha</label><input type='password' name='senha' autocomplete='current-password' required><div class='auth-actions'><button class='btn' type='submit'>Entrar</button><a class='auth-secondary' href='{{url_for("cadastro")}}'>Criar minha conta</a></div></form><div class='auth-links'>{% if support_whatsapp_url %}<a href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>Precisa de ajuda? Suporte</a>{% endif %}</div></div></main>""" + SITE_FOOTER_HTML + r"""</body></html>"""
 PAINEL_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Consultas Contatos Zap</title>""" + BASE_STYLE + r"""{{gtm_head|safe}}</head><body>{{gtm_body|safe}}""" + APP_HEADER_HTML + r"""<div class='wrap'>
 <div class='page-heading'><div><h1>Consulta de contatos</h1><p>Olá, {{usuario.usuario}}. Configure os filtros e gere sua lista com segurança.</p></div><span class='security-badge'>🔒 Ambiente protegido</span></div>
 {% with msgs=get_flashed_messages(with_categories=true) %}{% for cat,msg in msgs %}<div class='flash {% if cat=="erro" %}erro{% endif %}'>{{msg}}</div>{% endfor %}{% endwith %}
@@ -1428,13 +1580,32 @@ ADMIN_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><m
 
 
 
-CADASTRO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='theme-color' content='#0f766e'><link rel='icon' href='{{url_for("static",filename="logo_contatos_zap_icon.png")}}'><title>Criar conta · Contatos Zap</title>""" + BASE_STYLE + r"""{{gtm_head|safe}}</head><body class='loginbody'>{{gtm_body|safe}}<main class='auth-shell'><div class='login-card'><div class='auth-brand'><img src='{{url_for("static",filename="logo_contatos_zap.png")}}' alt='Contatos Zap'><h1>Crie sua conta</h1><p>Preencha seus dados para acessar a plataforma Contatos Zap.</p></div>{% if erro %}<div class='flash erro'>{{erro}}</div>{% endif %}<form method='post'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input type='text' name='website' tabindex='-1' autocomplete='off' style='position:absolute;left:-9999px' aria-hidden='true'><label>Usuário</label><input name='usuario' value='{{form.usuario}}' minlength='3' maxlength='40' pattern='[A-Za-z0-9._-]+' autocomplete='username' placeholder='Ex.: empresaoliveira' required><div class='helper'>Use letras, números, ponto, hífen ou underline.</div><label style='margin-top:12px'>E-mail</label><input type='email' name='email' value='{{form.email}}' autocomplete='email' placeholder='voce@empresa.com' required><label style='margin-top:12px'>Telefone</label><input name='telefone' value='{{form.telefone}}' inputmode='numeric' pattern='[0-9]{10,11}' minlength='10' maxlength='11' autocomplete='tel-national' placeholder='77998334733' required><div class='auth-note'><b>Importante:</b> Informe DDD + número, somente números. Usaremos esse telefone para ajudar a evitar contatos duplicados em novos pedidos.</div><label>Senha</label><input type='password' name='senha' minlength='8' autocomplete='new-password' required><label>Confirmar senha</label><input type='password' name='confirmar_senha' minlength='8' autocomplete='new-password' required><div class='terms-check'><input id='aceite' type='checkbox' name='aceite' value='1' required><label for='aceite'>Li e concordo com os <a href='{{terms_url}}' target='_blank' rel='noopener'>Termos de Uso</a> e com a <a href='{{privacy_url}}' target='_blank' rel='noopener'>Política de Privacidade</a>.</label></div><button class='btn' type='submit' style='width:100%'>Criar conta</button><a class='auth-secondary' style='margin-top:8px' href='{{url_for("login")}}'>Já tenho uma conta</a></form></div></main>""" + SITE_FOOTER_HTML + r"""</body></html>"""
+CADASTRO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='theme-color' content='#0f766e'><link rel='icon' href='{{url_for("static",filename="logo_contatos_zap_icon.png")}}'><title>Criar conta · Contatos Zap</title>""" + BASE_STYLE + r"""{{gtm_head|safe}}</head><body class='loginbody'>{{gtm_body|safe}}<main class='auth-shell'><div class='login-card'><div class='auth-brand'><img src='{{url_for("static",filename="logo_contatos_zap.png")}}' alt='Contatos Zap'><h1>Crie sua conta</h1><p>Preencha seus dados para acessar a plataforma Contatos Zap.</p></div>{% if erro %}<div class='flash erro'>{{erro}}</div>{% endif %}<form method='post'><input type='hidden' name='csrf_token' value='{{csrf_token()}}'><input type='text' name='website' tabindex='-1' autocomplete='off' style='position:absolute;left:-9999px' aria-hidden='true'><label>Usuário</label><input name='usuario' value='{{form.usuario}}' minlength='3' maxlength='40' pattern='[A-Za-z0-9._-]+' autocomplete='username' placeholder='Ex.: empresaoliveira' required><div class='helper'>Use letras, números, ponto, hífen ou underline.</div><label style='margin-top:12px'>E-mail</label><input type='email' name='email' value='{{form.email}}' autocomplete='email' placeholder='voce@empresa.com' required><label style='margin-top:12px'>Telefone</label><input name='telefone' value='{{form.telefone}}' inputmode='numeric' pattern='[0-9]{10,11}' minlength='10' maxlength='11' autocomplete='tel-national' placeholder='77998334733' required><div class='auth-note'><b>Importante:</b> use DDD + número, somente números. Este telefone identifica seu histórico de contatos já enviados e não poderá ser alterado pela sua conta.</div><label>Senha</label><input type='password' name='senha' minlength='8' autocomplete='new-password' required><label>Confirmar senha</label><input type='password' name='confirmar_senha' minlength='8' autocomplete='new-password' required><div class='terms-check'><input id='aceite' type='checkbox' name='aceite' value='1' required><label for='aceite'>Li e concordo com os <a href='{{terms_url}}' target='_blank' rel='noopener'>Termos de Uso</a> e com a <a href='{{privacy_url}}' target='_blank' rel='noopener'>Política de Privacidade</a>.</label></div><button class='btn' type='submit' style='width:100%'>Criar conta</button><a class='auth-secondary' style='margin-top:8px' href='{{url_for("login")}}'>Já tenho uma conta</a></form></div></main>""" + SITE_FOOTER_HTML + r"""</body></html>"""
 
 CADASTRO_SUCESSO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='theme-color' content='#0f766e'><link rel='icon' href='{{url_for("static",filename="logo_contatos_zap_icon.png")}}'><title>Conta criada · Contatos Zap</title>""" + BASE_STYLE + r"""{{gtm_head|safe}}</head><body class='loginbody'>{{gtm_body|safe}}<main class='auth-shell'><div class='login-card' style='text-align:center'><div class='auth-brand'><img src='{{url_for("static",filename="logo_contatos_zap.png")}}' alt='Contatos Zap'><div style='width:64px;height:64px;border-radius:50%;margin:10px auto 18px;background:#dcfce7;color:#166534;display:grid;place-items:center;font-size:31px;font-weight:900'>✓</div><h1>Conta criada com sucesso!</h1><p>Sua conta Contatos Zap está pronta. Você já pode acessar a plataforma e adicionar saldo quando desejar.</p></div><a class='btn' href='{{url_for("painel")}}' style='width:100%;margin-top:4px'>Entrar na plataforma</a>{% if support_whatsapp_url %}<a class='auth-secondary' style='margin-top:9px' href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>Precisa de ajuda? Falar com o suporte</a>{% endif %}</div></main>{% if disparar_conversao %}<script>window.dataLayer=window.dataLayer||[];window.dataLayer.push({event:'cadastro_concluido'});</script>{% endif %}""" + SITE_FOOTER_HTML + r"""</body></html>"""
 
 CONTA_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Minha conta · Contatos Zap</title>""" + BASE_STYLE + r"""{{gtm_head|safe}}</head><body>{{gtm_body|safe}}""" + APP_HEADER_HTML + r"""<div class='wrap'><div class='page-heading'><div><h1>Minha conta</h1><p>Dados vinculados ao seu acesso na plataforma.</p></div><span class='security-badge'>🔒 Conta protegida</span></div><div class='grid'><div class='card w6'><div class='section-title'>Dados da conta</div><label>Usuário</label><div class='readonly-box'>{{usuario.usuario}}</div><label style='margin-top:13px'>E-mail</label><div class='readonly-box'>{{usuario.email or 'Não informado'}}</div><label style='margin-top:13px'>Telefone</label><div class='readonly-box'>{{usuario.telefone or 'Não informado'}}</div><div class='auth-note' style='margin-top:12px'>O telefone é o identificador do seu histórico de contatos já enviados e não pode ser alterado pela conta do cliente. Se houver necessidade de correção, entre em contato com o suporte.</div></div><div class='card w6'><div class='section-title'>Segurança e suporte</div><p class='muted' style='font-size:12px;line-height:1.65'>Se você identificar qualquer problema no acesso ou nos seus dados cadastrais, fale com nosso suporte. Nunca compartilhe sua senha.</p>{% if support_whatsapp_url %}<a class='btn' href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>💬 Falar com o suporte</a>{% endif %}</div></div></div>""" + SITE_FOOTER_HTML + r"""</body></html>"""
 
 HISTORICO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Histórico · Contatos Zap</title>""" + BASE_STYLE + r"""{{gtm_head|safe}}</head><body>{{gtm_body|safe}}""" + APP_HEADER_HTML + r"""<div class='wrap'><div class='page-heading'><div><h1>Histórico de pedidos</h1><p>Acompanhe suas exportações recentes e baixe novamente arquivos ainda disponíveis.</p></div></div><div class='card w12'><div class='table-wrap'>{% if pedidos %}<table><thead><tr><th>Pedido</th><th>Quantidade</th><th>Status</th><th>Progresso</th><th>Data</th><th>Ações</th></tr></thead><tbody>{% for p in pedidos %}<tr><td><b>#{{p.id}}</b></td><td>{{"{:,}".format(p.quantidade).replace(",", ".")}}</td><td><span class='pill {{p.status}}'>{{p.status}}</span></td><td>{{p.progresso}}%</td><td>{{p.criado_em}}</td><td><div class='actions'><a class='btn2' href='{{url_for("ver_pedido",pedido_id=p.id)}}'>Abrir</a>{% if p.status=='CONCLUIDO' and p.arquivo_chave %}<a class='btn' href='{{url_for("baixar_pedido",pedido_id=p.id)}}'>📥 Baixar</a>{% endif %}</div></td></tr>{% endfor %}</tbody></table>{% else %}<p class='muted'>Você ainda não possui pedidos.</p>{% endif %}</div></div></div>""" + SITE_FOOTER_HTML + r"""</body></html>"""
+
+@app.route("/admin/google-ads/status")
+@login_required
+def google_ads_status():
+    usuario = usuario_atual()
+    if usuario["perfil"] != "ADMIN":
+        return jsonify({"ok": False, "erro": "sem_permissao"}), 403
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status, COUNT(*) AS quantidade FROM google_ads_conversoes GROUP BY status")
+            totais = {row["status"]: row["quantidade"] for row in cur.fetchall()}
+            cur.execute("""
+                SELECT id, status, tentativas, criado_em, enviado_em
+                FROM google_ads_conversoes ORDER BY id DESC LIMIT 10
+            """)
+            recentes = cur.fetchall()
+    return jsonify({"ok": True, "integracao_ativa": ads_configurado(),
+                    "totais": totais, "ultimos": recentes})
+
 
 @app.route("/health")
 def health():
@@ -1460,6 +1631,11 @@ def login():
         elif not u["ativo"]:
             erro = "Esta conta está bloqueada."
         else:
+            if identificar_clique(request.args, request.cookies):
+                with conectar() as conn:
+                    with conn.cursor() as cur:
+                        registrar_clique_google_usuario(cur, u["id"])
+                    conn.commit()
             session.clear()
             session["usuario_id"] = u["id"]
             csrf_token()
@@ -1528,6 +1704,7 @@ def cadastro():
                                 RETURNING id
                             """, (nome, generate_password_hash(senha), telefone, email))
                             uid = cur.fetchone()["id"]
+                            registrar_clique_google_usuario(cur, uid)
                             conn.commit()
                             session.clear()
                             session["usuario_id"] = uid
@@ -1817,6 +1994,11 @@ def criar_recarga_asaas():
     if not asaas_automatico_configurado():
         return "Integração automática do Asaas ainda não está configurada.", 503
     u = usuario_atual()
+    if identificar_clique(request.args, request.cookies):
+        with conectar() as conn:
+            with conn.cursor() as cur:
+                registrar_clique_google_usuario(cur, u["id"])
+            conn.commit()
     try:
         creditos_solicitados = int(request.form.get("creditos", "0") or 0)
     except ValueError:
@@ -2031,6 +2213,7 @@ def webhook_asaas():
                     SET processado=TRUE, observacao='Pagamento recebido e conciliado', processado_em=NOW()
                     WHERE asaas_event_id=%s
                 """, (event_id,))
+                colocar_pagamento_na_fila_google(cur, payment_id)
             conn.commit()
         return jsonify({"ok": True, "status": "RECEBIDO"}), 200
     except Exception:

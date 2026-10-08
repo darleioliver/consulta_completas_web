@@ -1,0 +1,24 @@
+<!-- INSERIR NO <head> DA PÁGINA app.contatozap.com (após configurar o consentimento apropriado).
+     NÃO envia informações pessoais nem registra compra. Só guarda identificadores do clique
+     para que o painel.contatozap.com consiga associar o acesso ao Google Ads. -->
+<script>
+(function () {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var keys = ['gclid', 'gbraid', 'wbraid'];
+    var found = null;
+    keys.some(function (k) {
+      var v = params.get(k);
+      if (v && /^[A-Za-z0-9_.~+:/=\-]{6,500}$/.test(v)) { found = {key:k,value:v}; return true; }
+      return false;
+    });
+    if (!found) return;
+    // Preserve a opção de consentimento do seu CMP: só executar quando permitido.
+    keys.forEach(function (k) {
+      document.cookie = 'cz_ads_' + k + '=; Max-Age=0; Path=/; Domain=.contatozap.com; SameSite=Lax; Secure';
+    });
+    document.cookie = 'cz_ads_' + found.key + '=' + encodeURIComponent(found.value) +
+      '; Max-Age=7776000; Path=/; Domain=.contatozap.com; SameSite=Lax; Secure';
+  } catch (e) { /* não interfere na página de vendas */ }
+})();
+</script>
