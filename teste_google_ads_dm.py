@@ -68,6 +68,55 @@ class GoogleAdsTests(unittest.TestCase):
         self.assertIn('events:ingest',post.call_args.args[0])
         self.assertEqual(post.call_args.kwargs['json']['events'][0]['conversionValue'],29.90)
 
+    @patch.object(dm.requests, 'post')
+    def test_teste_conexao_sem_compra_marca_validate_only(self, post):
+        token=Mock(ok=True)
+        token.json.return_value={'access_token':'TOKEN_TESTE'}
+        response=Mock(ok=True)
+        response.json.return_value={'requestId':'teste'}
+        post.side_effect=[token,response]
+        env={'GOOGLE_DM_ENABLED':'1','GOOGLE_DM_CUSTOMER_ID':'1234567890',
+             'GOOGLE_DM_CONVERSION_ACTION_ID':'45678901',
+             'GOOGLE_DM_CLIENT_ID':'fake-client','GOOGLE_DM_CLIENT_SECRET':'fake-secret',
+             'GOOGLE_DM_REFRESH_TOKEN':'fake-refresh'}
+        with patch.dict(os.environ,env,clear=True):
+            result=dm.testar_integracao_sem_compra()
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['conversoes_registradas'],0)
+        self.assertEqual(post.call_count,2)
+        self.assertIs(post.call_args.kwargs['json']['validateOnly'],True)
+        self.assertEqual(post.call_args.kwargs['json']['events'][0]['transactionId'],'CZ-SOMENTE-VALIDACAO')
+
+    @patch.object(dm.requests, 'post')
+    def test_teste_conexao_token_invalido_nao_tenta_api(self, post):
+        token=Mock(ok=False,status_code=400)
+        post.return_value=token
+        env={'GOOGLE_DM_ENABLED':'1','GOOGLE_DM_CUSTOMER_ID':'1234567890',
+             'GOOGLE_DM_CONVERSION_ACTION_ID':'45678901',
+             'GOOGLE_DM_CLIENT_ID':'fake-client','GOOGLE_DM_CLIENT_SECRET':'fake-secret',
+             'GOOGLE_DM_REFRESH_TOKEN':'fake-refresh'}
+        with patch.dict(os.environ,env,clear=True):
+            result=dm.testar_integracao_sem_compra()
+        self.assertEqual(result['motivo'],'CREDENCIAIS_RECUSADAS')
+        self.assertEqual(post.call_count,1)
+
+    @patch.object(dm.requests, 'post')
+    def test_teste_conexao_api_rejeita_sem_vazar_credenciais(self, post):
+        token=Mock(ok=True)
+        token.json.return_value={'access_token':'SEGREDO'}
+        response=Mock(ok=False,status_code=403)
+        response.json.return_value={'error':{'status':'PERMISSION_DENIED','message':'SEGREDO'}}
+        post.side_effect=[token,response]
+        env={'GOOGLE_DM_ENABLED':'1','GOOGLE_DM_CUSTOMER_ID':'1234567890',
+             'GOOGLE_DM_CONVERSION_ACTION_ID':'45678901',
+             'GOOGLE_DM_CLIENT_ID':'fake-client','GOOGLE_DM_CLIENT_SECRET':'fake-secret',
+             'GOOGLE_DM_REFRESH_TOKEN':'fake-refresh'}
+        with patch.dict(os.environ,env,clear=True):
+            result=dm.testar_integracao_sem_compra()
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['motivo'],'PERMISSION_DENIED')
+        self.assertNotIn('SEGREDO',str(result))
+
 
 if __name__=='__main__':
     unittest.main()

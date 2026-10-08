@@ -84,3 +84,7 @@ Não é necessário colocar o snippet antigo `Chamou no ZAP 2025` dentro do Pyth
 - Captura de IDs Google Ads só com consentimento; exclusão de fila pendente após recusa.
 - Fallback com banner apenas se o visitante abrir diretamente o painel sem preferência de cookies.
 - Veja `INSTRUCOES_CONSENTIMENTO_V12_5.md`.
+
+## V12.6 — Teste administrativo sem compra
+
+Novo endereço: `/admin/google-ads/testar` (somente ADMIN). Testa OAuth do Railway e valida o corpo da chamada da Data Manager API com `validateOnly=true`, **sem processar nenhuma compra ou conversão**. Instruções no arquivo `INSTRUCOES_TESTE_SEM_COMPRA_V12_6.md`.

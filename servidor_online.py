@@ -12,7 +12,7 @@ from functools import wraps
 import psycopg
 import boto3
 import requests
-from google_ads_dm import ads_configurado, enviar_evento, identificar_clique
+from google_ads_dm import ads_configurado, enviar_evento, identificar_clique, testar_integracao_sem_compra
 from flask import Flask, jsonify, redirect, render_template_string, request, session, url_for, flash
 from psycopg.rows import dict_row
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -1682,6 +1682,43 @@ CADASTRO_SUCESSO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset
 CONTA_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Minha conta · Contatos Zap</title>""" + BASE_STYLE + r"""{{gtm_head|safe}}</head><body>{{gtm_body|safe}}""" + APP_HEADER_HTML + r"""<div class='wrap'><div class='page-heading'><div><h1>Minha conta</h1><p>Dados vinculados ao seu acesso na plataforma.</p></div><span class='security-badge'>🔒 Conta protegida</span></div><div class='grid'><div class='card w6'><div class='section-title'>Dados da conta</div><label>Usuário</label><div class='readonly-box'>{{usuario.usuario}}</div><label style='margin-top:13px'>E-mail</label><div class='readonly-box'>{{usuario.email or 'Não informado'}}</div><label style='margin-top:13px'>Telefone</label><div class='readonly-box'>{{usuario.telefone or 'Não informado'}}</div><div class='auth-note' style='margin-top:12px'>O telefone é o identificador do seu histórico de contatos já enviados e não pode ser alterado pela conta do cliente. Se houver necessidade de correção, entre em contato com o suporte.</div></div><div class='card w6'><div class='section-title'>Segurança e suporte</div><p class='muted' style='font-size:12px;line-height:1.65'>Se você identificar qualquer problema no acesso ou nos seus dados cadastrais, fale com nosso suporte. Nunca compartilhe sua senha.</p>{% if support_whatsapp_url %}<a class='btn' href='{{support_whatsapp_url}}' target='_blank' rel='noopener'>💬 Falar com o suporte</a>{% endif %}</div></div></div>""" + SITE_FOOTER_HTML + r"""</body></html>"""
 
 HISTORICO_HTML = """<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Histórico · Contatos Zap</title>""" + BASE_STYLE + r"""{{gtm_head|safe}}</head><body>{{gtm_body|safe}}""" + APP_HEADER_HTML + r"""<div class='wrap'><div class='page-heading'><div><h1>Histórico de pedidos</h1><p>Acompanhe suas exportações recentes e baixe novamente arquivos ainda disponíveis.</p></div></div><div class='card w12'><div class='table-wrap'>{% if pedidos %}<table><thead><tr><th>Pedido</th><th>Quantidade</th><th>Status</th><th>Progresso</th><th>Data</th><th>Ações</th></tr></thead><tbody>{% for p in pedidos %}<tr><td><b>#{{p.id}}</b></td><td>{{"{:,}".format(p.quantidade).replace(",", ".")}}</td><td><span class='pill {{p.status}}'>{{p.status}}</span></td><td>{{p.progresso}}%</td><td>{{p.criado_em}}</td><td><div class='actions'><a class='btn2' href='{{url_for("ver_pedido",pedido_id=p.id)}}'>Abrir</a>{% if p.status=='CONCLUIDO' and p.arquivo_chave %}<a class='btn' href='{{url_for("baixar_pedido",pedido_id=p.id)}}'>📥 Baixar</a>{% endif %}</div></td></tr>{% endfor %}</tbody></table>{% else %}<p class='muted'>Você ainda não possui pedidos.</p>{% endif %}</div></div></div>""" + SITE_FOOTER_HTML + r"""</body></html>"""
+
+@app.route("/admin/google-ads/testar", methods=["GET", "POST"])
+@admin_required
+def google_ads_testar_conexao():
+    """Teste explícito do admin. Nunca registra compra nem altera saldo."""
+    if request.method == "POST":
+        if not validar_csrf():
+            return jsonify({"ok": False, "erro": "csrf_invalido"}), 400
+        result = testar_integracao_sem_compra()
+        return jsonify(result), (200 if result.get("ok") else 502)
+    return render_template_string("""<!doctype html><html lang='pt-BR'><head>
+      <meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>
+      <title>Testar Google Ads · Contatos Zap</title>
+      <style>body{font-family:system-ui,sans-serif;background:#0f1b2d;color:#eee;max-width:650px;margin:55px auto;padding:16px}
+      .painel{padding:24px;background:#182a40;border:1px solid #34485d;border-radius:15px}
+      button{background:#10b981;border:0;border-radius:8px;padding:13px 18px;font-weight:700;cursor:pointer}
+      pre{white-space:pre-wrap;word-break:break-word;background:#0b1523;padding:15px;border-radius:8px}
+      a{color:#88ddc0}small{color:#c8d3db}</style></head><body><div class='painel'>
+      <h2>Diagnóstico Google Ads</h2>
+      <p>Valida a autenticação e a configuração da Data Manager API.</p>
+      <p><b>Não gera Pix, não cobra nada e não registra conversões.</b></p>
+      <button id='testar'>Testar conexão com Google</button>
+      <pre id='resultado'>Aguardando teste.</pre>
+      <small>Somente administradores. A validação usa validateOnly=true.</small>
+      <p><a href='/admin/google-ads/status'>Ver histórico das conversões</a></p>
+      </div><script>
+      document.getElementById('testar').addEventListener('click', async function(){
+        const b=this; b.disabled=true; document.getElementById('resultado').textContent='Testando...';
+        try{
+          const r=await fetch('/admin/google-ads/testar',{method:'POST',credentials:'same-origin',
+            headers:{'Content-Type':'application/x-www-form-urlencoded'},
+            body:new URLSearchParams({csrf_token:{{token|tojson}}})});
+          const d=await r.json(); document.getElementById('resultado').textContent=JSON.stringify(d,null,2);
+        } catch(e){document.getElementById('resultado').textContent='Falha de rede ao testar conexão.';}
+        finally{b.disabled=false;}
+      });</script></body></html>""", token=csrf_token())
+
 
 @app.route("/admin/google-ads/status")
 @login_required

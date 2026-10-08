@@ -118,3 +118,65 @@ def enviar_evento(pagamento):
     if not json_resp.get("requestId"):
         raise RuntimeError("Data Manager não devolveu requestId")
     return str(json_resp["requestId"])
+
+
+def testar_integracao_sem_compra():
+    """Diagnostica OAuth e valida um evento SINTÉTICO sem ingeri-lo.
+
+    Usado SOMENTE numa ação POST administrativa; não cria recargas ou conversões.
+    Os identificadores de teste nunca são enviados com validateOnly=False.
+    """
+    if not ads_configurado():
+        return {"ok": False, "etapa": "configuracao", "motivo": "INTEGRACAO_DESABILITADA_OU_INCOMPLETA"}
+
+    try:
+        corpo = montar_requisicao(payload_evento({
+            "gclid": "CZ_VALIDACAO_SEM_COMPRA_1234567890123456",
+            "asaas_payment_id": "CZ-SOMENTE-VALIDACAO",
+            "valor": "1.00",
+            "evento_em": datetime.now(timezone.utc),
+        }))
+    except (ValueError, TypeError, KeyError):
+        return {"ok": False, "etapa": "configuracao", "motivo": "ID_CONTA_OU_CONVERSAO_INVALIDO"}
+    # A API NÃO processa nem contabiliza eventos quando validateOnly=True.
+    corpo["validateOnly"] = True
+
+    try:
+        token_resp = requests.post(TOKEN_URL, data={
+            "grant_type": "refresh_token",
+            "client_id": os.environ["GOOGLE_DM_CLIENT_ID"],
+            "client_secret": os.environ["GOOGLE_DM_CLIENT_SECRET"],
+            "refresh_token": os.environ["GOOGLE_DM_REFRESH_TOKEN"],
+        }, timeout=20)
+    except requests.RequestException:
+        return {"ok": False, "etapa": "oauth", "motivo": "FALHA_DE_REDE"}
+    if not token_resp.ok:
+        return {"ok": False, "etapa": "oauth", "http_status": token_resp.status_code,
+                "motivo": "CREDENCIAIS_RECUSADAS"}
+    try:
+        access_token = token_resp.json().get("access_token")
+    except ValueError:
+        access_token = None
+    if not access_token:
+        return {"ok": False, "etapa": "oauth", "motivo": "TOKEN_AUSENTE"}
+
+    headers = {"Authorization": "Bearer " + access_token, "Content-Type": "application/json"}
+    project = os.getenv("GOOGLE_DM_PROJECT_ID", "").strip()
+    if project:
+        headers["x-goog-user-project"] = project
+    try:
+        resposta = requests.post(API_URL, headers=headers, json=corpo, timeout=30)
+    except requests.RequestException:
+        return {"ok": False, "oauth": "OK", "etapa": "data_manager", "motivo": "FALHA_DE_REDE"}
+    if not resposta.ok:
+        # Nunca apresentar corpo da resposta, códigos secretos, IDs de clientes ou de cliques.
+        try:
+            status = str(resposta.json().get("error", {}).get("status", "ERRO_DESCONHECIDO"))
+        except (ValueError, TypeError, AttributeError):
+            status = "ERRO_DESCONHECIDO"
+        return {"ok": False, "oauth": "OK", "etapa": "data_manager",
+                "http_status": resposta.status_code, "motivo": status,
+                "validate_only": True, "conversoes_registradas": 0}
+    return {"ok": True, "oauth": "OK", "data_manager": "REQUISICAO_VALIDADA",
+            "validate_only": True, "conversoes_registradas": 0,
+            "aviso": "Teste de validacao; ainda precisa confirmar um pagamento real e os diagnosticos de importacao."}
