@@ -10,15 +10,20 @@ import google_ads_dm as dm
 class GoogleAdsTests(unittest.TestCase):
     def test_prioriza_gclid_parametro(self):
         self.assertEqual(dm.identificar_clique(
-            {'gclid':'CjABCDEF123456'}, {'cz_ads_gclid':'CjCOOKIE456789'}),
+            {'gclid':'CjABCDEF123456'}, {'cz_consent':'granted','cz_ads_gclid':'CjCOOKIE456789'}),
             {'gclid':'CjABCDEF123456'})
 
+    def test_sem_consentimento_nao_captura(self):
+        self.assertEqual(dm.identificar_clique({'gclid':'CjREALCLICK123'}, {}), {})
+        self.assertEqual(dm.identificar_clique({'gclid':'CjREALCLICK123'}, {'cz_consent':'denied'}), {})
+        self.assertEqual(dm.identificar_clique({}, {'cz_ads_gclid':'CjCOOKIE123'}), {})
+
     def test_cookie_compartilhado(self):
-        self.assertEqual(dm.identificar_clique({}, {'cz_ads_wbraid':'WBRAID1234'}),
+        self.assertEqual(dm.identificar_clique({}, {'cz_consent':'granted','cz_ads_wbraid':'WBRAID1234'}),
                          {'wbraid':'WBRAID1234'})
 
     def test_cookie_google_tag(self):
-        self.assertEqual(dm.identificar_clique({}, {'_gcl_aw':'GCL.1760000000.CjCLICK123456'}),
+        self.assertEqual(dm.identificar_clique({}, {'cz_consent':'granted','_gcl_aw':'GCL.1760000000.CjCLICK123456'}),
                          {'gclid':'CjCLICK123456'})
 
     def test_rejeita_codigo_html(self):

@@ -147,16 +147,75 @@ COPYRIGHT_YEAR = os.getenv("COPYRIGHT_YEAR", "2026").strip() or "2026"
 # Google Ads Data Manager: os pagamentos são enviados pelo servidor APENAS após
 # PAYMENT_RECEIVED e apenas após GOOGLE_DM_ENABLED=1 + credenciais configuradas.
 # Identificadores de clique ficam em cookie próprio nos subdomínios contatozap.com.
-ADS_COOKIE_SCRIPT = r"""<script>(function(){try{
- var p=new URLSearchParams(window.location.search);
- var keys=['gclid','gbraid','wbraid'],found=null;
- keys.some(function(k){var v=p.get(k);if(v&&/^[A-Za-z0-9_.~+:/=\-]{6,500}$/.test(v)){
- found={key:k,value:v};return true;}return false;});
- if(!found)return;
- keys.forEach(function(k){document.cookie='cz_ads_'+k+'=; Max-Age=0; Path=/; Domain=.contatozap.com; SameSite=Lax; Secure';});
- document.cookie='cz_ads_'+found.key+'='+encodeURIComponent(found.value)+
- '; Max-Age=7776000; Path=/; Domain=.contatozap.com; SameSite=Lax; Secure';
- }catch(e){}})();</script>"""
+# O painel lê o consentimento compartilhado ANTES do GTM e só grava IDs
+# publicitários se cz_consent=granted. Direto no painel sem escolha => denied.
+ADS_CONSENT_HEAD_SCRIPT = r"""<script>
+(function(w,d){
+  w.dataLayer=w.dataLayer||[];
+  w.gtag=w.gtag||function(){w.dataLayer.push(arguments);};
+  function readCookie(name){
+    var m=d.cookie.match(new RegExp('(?:^|;\\s*)'+name+'=([^;]*)'));
+    return m?decodeURIComponent(m[1]):'';
+  }
+  var choice=readCookie('cz_consent');
+  var allowed=choice==='granted';
+  w.gtag('consent','default',{
+    'ad_storage':allowed?'granted':'denied',
+    'analytics_storage':allowed?'granted':'denied',
+    'ad_user_data':allowed?'granted':'denied',
+    'ad_personalization':allowed?'granted':'denied'
+  });
+  w.gtag('set','ads_data_redaction',true);
+  w.gtag('set','url_passthrough',true);
+  var keys=['gclid','gbraid','wbraid'];
+  try {
+    if(!allowed){
+      keys.forEach(function(k){d.cookie='cz_ads_'+k+'=; Max-Age=0; Path=/; Domain=.contatozap.com; SameSite=Lax; Secure';});
+      return;
+    }
+    var params=new URLSearchParams(w.location.search), found=null;
+    keys.some(function(k){var val=params.get(k);if(val&&/^[A-Za-z0-9_.~+:/=-]{6,500}$/.test(val)){
+      found={name:k,value:val};return true;}return false;});
+    if(!found)return;
+    keys.forEach(function(k){d.cookie='cz_ads_'+k+'=; Max-Age=0; Path=/; Domain=.contatozap.com; SameSite=Lax; Secure';});
+    d.cookie='cz_ads_'+found.name+'='+encodeURIComponent(found.value)+
+      '; Max-Age=7776000; Path=/; Domain=.contatozap.com; SameSite=Lax; Secure';
+  }catch(e){}
+})(window,document);
+</script>"""
+
+# Fallback para visitas diretas ao painel, sem consentimento anterior na página
+# de vendas. Se a preferência foi compartilhada, não apresenta segundo banner.
+ADS_CONSENT_BODY_HTML = r"""<div id="cz-consent-panel" role="region" aria-label="Preferências de cookies" style="display:none;position:fixed;bottom:16px;left:16px;right:16px;z-index:999999;max-width:720px;margin:auto;background:#0f1b2d;color:#fff;padding:16px;border-radius:12px;box-shadow:0 8px 32px #0005;font:14px/1.5 Arial,sans-serif">
+  <div style="margin-bottom:10px">Utilizamos cookies para medir acessos e anúncios. Você pode aceitar ou recusar cookies opcionais. <a href="https://app.contatozap.com/privacidade" target="_blank" rel="noopener noreferrer" style="color:#a7f3d0">Política de Privacidade</a>.</div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+    <button type="button" data-consent="denied" style="padding:9px 20px;border-radius:8px;border:1px solid #94a3b8;background:transparent;color:#fff;cursor:pointer">Recusar</button>
+    <button type="button" data-consent="granted" style="padding:9px 20px;border-radius:8px;border:0;background:#10b981;color:#062e22;font-weight:bold;cursor:pointer">Aceitar</button>
+  </div>
+</div>
+<script>(function(w,d){
+  var banner=d.getElementById('cz-consent-panel');
+  if(!banner)return;
+  function read(){var m=d.cookie.match(/(?:^|;\s*)cz_consent=([^;]*)/);return m?decodeURIComponent(m[1]):'';}
+  var current=read();
+  if(current==='granted'||current==='denied')return;
+  banner.style.display='block';
+  banner.addEventListener('click',function(e){
+    var button=e.target.closest('[data-consent]');if(!button)return;
+    var choice=button.getAttribute('data-consent');
+    if(choice!=='granted'&&choice!=='denied')return;
+    d.cookie='cz_consent='+choice+'; Max-Age=31536000; Path=/; Domain=.contatozap.com; SameSite=Lax; Secure';
+    w.gtag&&w.gtag('consent','update',{
+      'ad_storage':choice,'analytics_storage':choice,
+      'ad_user_data':choice,'ad_personalization':choice
+    });
+    w.dataLayer=w.dataLayer||[];
+    w.dataLayer.push({event:'cookie_consent_update',consent_status:choice,ad_storage:choice});
+    banner.style.display='none';
+    // Reload to synchronize the new choice with user attribution on the server.
+    w.location.reload();
+  });
+})(window,document);</script>"""
 
 # Google Tag Manager — rastreamento da plataforma.
 # Pode ser alterado pelo Railway, mas o container padrão é o utilizado no Contatos Zap.
@@ -249,8 +308,8 @@ app.jinja_env.globals.update(
     company_cnpj=COMPANY_CNPJ,
     copyright_year=COPYRIGHT_YEAR,
     support_whatsapp_url=SUPPORT_WHATSAPP_URL,
-    gtm_head=ADS_COOKIE_SCRIPT + GTM_HEAD_HTML,
-    gtm_body=GTM_BODY_HTML,
+    gtm_head=ADS_CONSENT_HEAD_SCRIPT + GTM_HEAD_HTML,
+    gtm_body=GTM_BODY_HTML + ADS_CONSENT_BODY_HTML,
 )
 
 FAIXAS_RENDA_DESCRICAO = {
@@ -343,6 +402,7 @@ def init_db():
                     cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ads_gbraid TEXT")
                     cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ads_wbraid TEXT")
                     cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ads_clique_registrado_em TIMESTAMPTZ")
+                    cur.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ads_consent_granted BOOLEAN NOT NULL DEFAULT FALSE")
                     cur.execute("""
                         CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_email_cliente
                         ON usuarios(LOWER(email))
@@ -522,12 +582,14 @@ init_db()
 
 def registrar_clique_google_usuario(cur, usuario_id):
     """Salva o clique atribuído ao usuário, inclusive ao fazer login novamente."""
+    if request.cookies.get("cz_consent") != "granted":
+        return
     identificador = identificar_clique(request.args, request.cookies)
     if not identificador:
         return
     cur.execute("""
         UPDATE usuarios
-        SET ads_gclid=%s, ads_gbraid=%s, ads_wbraid=%s, ads_clique_registrado_em=NOW()
+        SET ads_gclid=%s, ads_gbraid=%s, ads_wbraid=%s, ads_clique_registrado_em=NOW(), ads_consent_granted=TRUE
         WHERE id=%s
     """, (identificador.get("gclid"), identificador.get("gbraid"),
           identificador.get("wbraid"), usuario_id))
@@ -542,8 +604,9 @@ def colocar_pagamento_na_fila_google(cur, pagamento_id):
         SELECT p.asaas_payment_id, p.usuario_id, p.valor,
                u.ads_gclid, u.ads_gbraid, u.ads_wbraid,
                COALESCE(p.creditado_em, NOW()),
-               CASE WHEN u.ads_gclid IS NOT NULL OR u.ads_gbraid IS NOT NULL
-                          OR u.ads_wbraid IS NOT NULL THEN 'PENDENTE'
+               CASE WHEN u.ads_consent_granted = TRUE
+                          AND (u.ads_gclid IS NOT NULL OR u.ads_gbraid IS NOT NULL
+                          OR u.ads_wbraid IS NOT NULL) THEN 'PENDENTE'
                     ELSE 'SEM_CLIQUE' END
         FROM asaas_pagamentos p
         JOIN usuarios u ON u.id = p.usuario_id
@@ -561,8 +624,9 @@ def processar_uma_conversao_google():
             cur.execute("""
                 WITH alvo AS (
                     SELECT id FROM google_ads_conversoes
-                    WHERE tentativas < 12 AND
-                          ((status='PENDENTE' AND (proxima_tentativa IS NULL OR proxima_tentativa <= NOW()))
+                    WHERE tentativas < 12
+                      AND EXISTS (SELECT 1 FROM usuarios u WHERE u.id = google_ads_conversoes.usuario_id AND u.ads_consent_granted=TRUE)
+                      AND ((status='PENDENTE' AND (proxima_tentativa IS NULL OR proxima_tentativa <= NOW()))
                             OR (status='PROCESSANDO' AND processando_em < NOW() - INTERVAL '10 minutes'))
                     ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1
                 )
@@ -629,6 +693,37 @@ def iniciar_worker_ads_quando_configurado():
         if not _google_worker_started:
             threading.Thread(target=_google_ads_worker, name="google-ads-dm", daemon=True).start()
             _google_worker_started = True
+
+
+@app.before_request
+def sincronizar_consentimento_google_usuario():
+    """When marketing consent is withdrawn, drop attribution and unsent events."""
+    uid = session.get("usuario_id")
+    if not uid:
+        return
+    choice = request.cookies.get("cz_consent", "")
+    if choice not in ("granted", "denied"):
+        choice = "denied"
+    if session.get("_cz_consent_sincronizado") == choice:
+        return
+    with conectar() as conn:
+        with conn.cursor() as cur:
+            if choice == "granted":
+                cur.execute("UPDATE usuarios SET ads_consent_granted=TRUE WHERE id=%s", (uid,))
+            else:
+                cur.execute("""
+                    UPDATE usuarios SET ads_consent_granted=FALSE,
+                      ads_gclid=NULL, ads_gbraid=NULL, ads_wbraid=NULL,
+                      ads_clique_registrado_em=NULL WHERE id=%s
+                """, (uid,))
+                cur.execute("""
+                    UPDATE google_ads_conversoes
+                    SET status='SEM_CLIQUE',gclid=NULL,gbraid=NULL,wbraid=NULL,
+                        ultimo_erro=NULL,proxima_tentativa=NULL
+                    WHERE usuario_id=%s AND status IN ('PENDENTE','FALHA')
+                """, (uid,))
+        conn.commit()
+    session["_cz_consent_sincronizado"] = choice
 
 
 def csrf_token():
@@ -1631,7 +1726,7 @@ def login():
         elif not u["ativo"]:
             erro = "Esta conta está bloqueada."
         else:
-            if identificar_clique(request.args, request.cookies):
+            if request.cookies.get("cz_consent") == "granted" and identificar_clique(request.args, request.cookies):
                 with conectar() as conn:
                     with conn.cursor() as cur:
                         registrar_clique_google_usuario(cur, u["id"])
@@ -1994,7 +2089,7 @@ def criar_recarga_asaas():
     if not asaas_automatico_configurado():
         return "Integração automática do Asaas ainda não está configurada.", 503
     u = usuario_atual()
-    if identificar_clique(request.args, request.cookies):
+    if request.cookies.get("cz_consent") == "granted" and identificar_clique(request.args, request.cookies):
         with conectar() as conn:
             with conn.cursor() as cur:
                 registrar_clique_google_usuario(cur, u["id"])

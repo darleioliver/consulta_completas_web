@@ -77,3 +77,10 @@ Não é necessário colocar o snippet antigo `Chamou no ZAP 2025` dentro do Pyth
 - Status exclusivo para administrador: `/admin/google-ads/status`.
 - Configuração completa em `INSTRUCOES_GOOGLE_ADS_V12_4.md`.
 - Compatível com o agente local da versão anterior: **nenhuma alteração no agente**.
+
+## V12.5 — Google Consent Mode v2 no painel
+
+- Respeita `cz_consent` de `.contatozap.com` antes de carregar o GTM.
+- Captura de IDs Google Ads só com consentimento; exclusão de fila pendente após recusa.
+- Fallback com banner apenas se o visitante abrir diretamente o painel sem preferência de cookies.
+- Veja `INSTRUCOES_CONSENTIMENTO_V12_5.md`.

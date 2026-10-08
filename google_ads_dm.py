@@ -33,6 +33,8 @@ def identificar_clique(args, cookies):
 
     _gcl_aw é gerado pelo tag do Google quando disponível (formato GCL.timestamp.gclid).
     """
+    if cookies.get("cz_consent") != "granted":
+        return {}
     identificadores = {}
     for nome in ("gclid", "gbraid", "wbraid"):
         valor = normalizar_click_id(args.get(nome)) or normalizar_click_id(unquote(str(cookies.get("cz_ads_" + nome) or "")))
