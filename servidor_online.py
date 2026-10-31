@@ -800,6 +800,25 @@ def split_texto(texto):
     return saida
 
 
+def split_bairros(texto):
+    """Separa bairros por vírgula, ponto e vírgula ou quebra de linha.
+
+    Espaços internos fazem parte do nome (ex.: ASA SUL, SETOR SUDOESTE).
+    """
+    if not texto:
+        return []
+    itens = re.split(r"[,;\n\r]+", str(texto))
+    saida = []
+    vistos = set()
+    for item in itens:
+        bairro = re.sub(r"\s+", " ", item).strip()
+        chave = bairro.casefold()
+        if bairro and chave not in vistos:
+            vistos.add(chave)
+            saida.append(bairro)
+    return saida
+
+
 def opcoes(tipo):
     with conectar() as conn:
         with conn.cursor() as cur:
@@ -2473,7 +2492,7 @@ def criar_pedido():
         "idade_min": idade_min,
         "idade_max": idade_max,
         "ceps": split_texto(request.form.get("ceps")),
-        "bairros": split_texto(request.form.get("bairros")),
+        "bairros": split_bairros(request.form.get("bairros")),
         "ddds": split_texto(request.form.get("ddds")),
         "atualizados_2026": atualizados,
     }
